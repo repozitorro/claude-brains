@@ -86,6 +86,12 @@ class ClaudeSessionManager(private val project: Project) :
 
     override fun loadState(state: State) {
         sessions.clear()
+        // Resume auto-numbering above the highest restored "Chat N", so a new
+        // session can't collide with a persisted one's name.
+        val highest = state.sessions.mapNotNull { AUTO_NAME.find(it.displayName)?.groupValues?.get(1)?.toIntOrNull() }
+            .maxOrNull() ?: 0
+        counter.set(highest)
+
         state.sessions.forEach { ps ->
             val session = ClaudeSession(ps.displayName.ifBlank { "Chat ${counter.incrementAndGet()}" })
             session.cliSessionId = ps.cliSessionId
@@ -121,5 +127,9 @@ class ClaudeSessionManager(private val project: Project) :
         var role: String = Role.ASSISTANT.name
         var text: String = ""
         var thinking: String = ""
+    }
+
+    private companion object {
+        val AUTO_NAME = Regex("""^Chat (\d+)$""")
     }
 }

@@ -55,7 +55,16 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     // Model aliases are accepted by `claude --model` and stay valid across
     // point releases, unlike pinned ids.
     private val modelSelector = JComboBox(arrayOf("(default)", "opus", "sonnet", "haiku")).apply {
-        selectedItem = settings.defaultModel.ifBlank { "(default)" }
+        // A fresh session adopts the configured default (otherwise that setting
+        // would only ever be cosmetic); a restored session keeps its own model.
+        if (session.selectedModel == null) {
+            session.selectedModel = settings.defaultModel.takeIf { it.isNotBlank() }
+        }
+        val current = session.selectedModel
+        // A persisted model may be a pinned id that isn't one of the aliases above.
+        if (current != null && (0 until itemCount).none { getItemAt(it) == current }) addItem(current)
+        selectedItem = current ?: "(default)"
+
         addActionListener {
             val choice = selectedItem as String
             session.selectedModel = if (choice == "(default)") null else choice

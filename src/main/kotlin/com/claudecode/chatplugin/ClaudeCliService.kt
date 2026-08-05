@@ -40,10 +40,15 @@ import java.util.concurrent.Executors
  *    purely as the end-of-turn signal (plus cost/usage metadata).
  */
 @Service(Service.Level.PROJECT)
-class ClaudeCliService(private val project: Project) {
+class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disposable {
 
     private val log = Logger.getInstance(ClaudeCliService::class.java)
     private val executor = Executors.newCachedThreadPool()
+
+    /** Shuts the worker pool down with the project, so its threads don't outlive it. */
+    override fun dispose() {
+        executor.shutdownNow()
+    }
 
     private val settings get() = ClaudeCodeSettings.getInstance(project)
 
