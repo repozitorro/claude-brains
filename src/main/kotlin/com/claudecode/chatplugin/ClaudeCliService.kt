@@ -141,7 +141,9 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
             add("stream-json")
             add("--verbose")                 // required alongside stream-json
             add("--include-partial-messages") // enables token-by-token text/thinking deltas
-            settings.permissionMode.takeIf { it.isNotBlank() && it != "default" }?.let {
+            // Per-chat mode wins; otherwise the project setting; otherwise no flag,
+            // which leaves the CLI on its own configured default.
+            (session.permissionMode ?: settings.permissionMode).takeIf { it.isNotBlank() }?.let {
                 add("--permission-mode")
                 add(it)
             }
