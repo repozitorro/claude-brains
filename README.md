@@ -150,7 +150,11 @@ src/main/resources/webview/    # chat.html shell + highlight.min.js + hljs theme
 src/main/resources/META-INF/plugin.xml   # registers everything above
 ```
 
-## Third-party
+## License
+
+[MIT](LICENSE).
+
+### Third-party
 
 `src/main/resources/webview/` bundles [highlight.js](https://highlightjs.org/)
 11.9.0 and two of its themes (BSD-3-Clause, license header kept in the file) so
