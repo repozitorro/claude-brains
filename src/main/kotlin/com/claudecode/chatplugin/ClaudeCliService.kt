@@ -90,6 +90,8 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         /** MCP servers that did not come up, as "name (status)" strings. */
         fun onMcpFailures(failed: List<String>) {}
         fun onSessionId(cliSessionId: String)
+        /** The stored `--resume` id was gone, so the turn was retried with a fresh context. */
+        fun onSessionExpired() {}
         fun onComplete(result: TurnResult)
         fun onError(message: String)
     }
@@ -124,7 +126,12 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         session.process?.destroy()
     }
 
-    private fun runProcess(session: ClaudeSession, prompt: String, listener: StreamListener) {
+    private fun runProcess(
+        session: ClaudeSession,
+        prompt: String,
+        listener: StreamListener,
+        allowResume: Boolean = true
+    ) {
         val claudeCommand = settings.claudeCommand
         val command = buildList {
             add(claudeCommand)
@@ -146,15 +153,19 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
                 add("--disallowedTools")
                 add(it)
             }
-            session.cliSessionId?.let {
-                add("--resume")
-                add(it)
+            if (allowResume) {
+                session.cliSessionId?.let {
+                    add("--resume")
+                    add(it)
+                }
             }
             session.selectedModel?.let {
                 add("--model")
                 add(it)
             }
         }
+
+        val usedResume = command.contains("--resume")
 
         val workingDir = project.basePath?.let { java.io.File(it) }
         val process = try {
@@ -191,13 +202,38 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         val exitCode = process.waitFor()
         stderrThread.join(500)
 
+        val stderrText = stderr.toString().trim()
+        val result = completed
+
+        // The stored session id can be pruned by the CLI, in which case every
+        // later turn in a restored tab would fail. Detect that one case and
+        // retry once from a fresh context instead of leaving the tab broken.
+        if (result != null && result.isError && allowResume && usedResume &&
+            STALE_SESSION.containsMatchIn(stderrText)
+        ) {
+            log.info("Stored --resume id was stale; retrying with a fresh context")
+            session.cliSessionId = null
+            listener.onSessionExpired()
+            runProcess(session, prompt, listener, allowResume = false)
+            return
+        }
+
         when {
-            completed != null -> listener.onComplete(completed!!)
-            exitCode != 0 -> listener.onError(
-                "claude exited with code $exitCode" +
-                    if (stderr.isNotBlank()) "\n${stderr.toString().trim()}" else ""
+            result != null -> listener.onComplete(
+                // Some failures (a stale session id among them) report no text in
+                // the result event and only explain themselves on stderr.
+                if (result.isError && result.errorMessage.isNullOrBlank() && stderrText.isNotEmpty()) {
+                    result.copy(errorMessage = stderrText)
+                } else {
+                    result
+                }
             )
-            else -> listener.onComplete(TurnResult(isError = false, costUsd = null, inputTokens = null, outputTokens = null, durationMs = null))
+            exitCode != 0 -> listener.onError(
+                "claude exited with code $exitCode" + if (stderrText.isNotEmpty()) "\n$stderrText" else ""
+            )
+            else -> listener.onComplete(
+                TurnResult(isError = false, costUsd = null, inputTokens = null, outputTokens = null, durationMs = null)
+            )
         }
     }
 
@@ -384,5 +420,12 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
 
     companion object {
         fun getInstance(project: Project): ClaudeCliService = project.getService(ClaudeCliService::class.java)
+
+        /**
+         * How the CLI reports an unknown `--resume` id (verified against 2.1.205:
+         * exit 1, `result.subtype == "error_during_execution"`, and this line on
+         * stderr — the result event itself carries no explanatory text).
+         */
+        internal val STALE_SESSION = Regex("No conversation found with session ID", RegexOption.IGNORE_CASE)
     }
 }

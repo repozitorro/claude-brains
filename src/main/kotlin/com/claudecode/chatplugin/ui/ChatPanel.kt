@@ -26,6 +26,7 @@ import javax.swing.JComboBox
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.KeyStroke
+import javax.swing.Timer
 
 /**
  * Chat UI for a single [ClaudeSession]. One of these lives inside each tool
@@ -368,7 +369,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
         setBusy(true)
 
-        fun repaint() = chatView.render(assistantIndex, assistantMessage)
+        // Streamed updates are coalesced; terminal states repaint immediately.
+        fun repaint() = scheduleRender(assistantIndex, assistantMessage)
+        fun repaintNow() = renderNow(assistantIndex, assistantMessage)
 
         cliService.sendPrompt(session, prompt, object : ClaudeCliService.StreamListener {
             override fun onTextChunk(chunk: String) {
@@ -427,6 +430,16 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 session.cliSessionId = cliSessionId
             }
 
+            override fun onSessionExpired() {
+                ApplicationManager.getApplication().invokeLater {
+                    addSystemBubble(
+                        "ℹ️ The earlier conversation is no longer stored by the CLI, so this " +
+                            "message was sent with a fresh context. The transcript above is kept " +
+                            "for reference, but Claude can't see it."
+                    )
+                }
+            }
+
             override fun onComplete(result: ClaudeCliService.TurnResult) {
                 ApplicationManager.getApplication().invokeLater {
                     assistantMessage.isStreaming = false
@@ -454,7 +467,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                         }
                         edit.resolve(after)
                     }
-                    repaint()
+                    repaintNow()
 
                     // Accumulate session analytics.
                     session.turnCount++
@@ -478,15 +491,40 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 ApplicationManager.getApplication().invokeLater {
                     assistantMessage.isStreaming = false
                     assistantMessage.text += "\n\n**Error:** $message"
-                    repaint()
+                    repaintNow()
                     setBusy(false)
                 }
             }
         })
     }
 
+    // --- Render coalescing ---
+    // Re-rendering a message costs O(its length), so repainting on every streamed
+    // token is quadratic in the reply size and visibly stutters on long answers.
+    // Updates are therefore coalesced: at most one repaint per RENDER_INTERVAL_MS,
+    // with the latest state always rendered by the trailing tick.
+    private var pendingRender: Pair<Int, ChatMessage>? = null
+
+    private val renderTimer = Timer(RENDER_INTERVAL_MS) {
+        pendingRender?.let { (index, message) -> chatView.render(index, message) }
+        pendingRender = null
+    }.apply { isRepeats = false }
+
+    private fun scheduleRender(index: Int, message: ChatMessage) {
+        pendingRender = index to message
+        if (!renderTimer.isRunning) renderTimer.start()
+    }
+
+    /** Renders immediately, cancelling any coalesced update (for final/terminal states). */
+    private fun renderNow(index: Int, message: ChatMessage) {
+        renderTimer.stop()
+        pendingRender = null
+        chatView.render(index, message)
+    }
+
     private companion object {
         val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
+        const val RENDER_INTERVAL_MS = 50
     }
 
     /**

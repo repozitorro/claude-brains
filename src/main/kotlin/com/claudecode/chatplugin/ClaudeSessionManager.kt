@@ -71,14 +71,24 @@ class ClaudeSessionManager(private val project: Project) :
             ps.totalInputTokens = s.totalInputTokens
             ps.totalOutputTokens = s.totalOutputTokens
             ps.turnCount = s.turnCount
-            for (m in s.messages) {
-                if (m.isStreaming) continue
-                val pm = PersistedMessage()
-                pm.role = m.role.name
-                pm.text = m.text
-                pm.thinking = m.thinking
-                ps.messages.add(pm)
-            }
+            // Persisted state lands in a project XML file, so the transcript is
+            // capped: only the most recent messages are kept, long ones are
+            // truncated, and reasoning is dropped entirely (it's scratch work,
+            // and by far the bulkiest part).
+            s.messages.asSequence()
+                .filter { !it.isStreaming }
+                .toList()
+                .takeLast(MAX_PERSISTED_MESSAGES)
+                .forEach { m ->
+                    val pm = PersistedMessage()
+                    pm.role = m.role.name
+                    pm.text = if (m.text.length > MAX_PERSISTED_TEXT) {
+                        m.text.take(MAX_PERSISTED_TEXT) + "\n\n_(truncated when saved)_"
+                    } else {
+                        m.text
+                    }
+                    ps.messages.add(pm)
+                }
             state.sessions.add(ps)
         }
         return state
@@ -131,5 +141,7 @@ class ClaudeSessionManager(private val project: Project) :
 
     private companion object {
         val AUTO_NAME = Regex("""^Chat (\d+)$""")
+        const val MAX_PERSISTED_MESSAGES = 100
+        const val MAX_PERSISTED_TEXT = 20_000
     }
 }
