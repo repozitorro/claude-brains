@@ -28,17 +28,23 @@ object ImageAttachments {
     }
 
     /**
-     * Writes the clipboard image to a temp PNG and returns it, or null if the
-     * clipboard holds no image (or it couldn't be read).
+     * Writes an image to a temp PNG and returns it, or null if there is no
+     * readable image.
+     *
+     * [transferable] is the payload of a paste or drop when one is available;
+     * without it the system clipboard is read directly (the toolbar button).
      */
-    fun saveClipboardImage(): File? {
+    fun saveClipboardImage(transferable: java.awt.datatransfer.Transferable? = null): File? {
         return try {
-            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
-            if (!clipboard.isDataFlavorAvailable(DataFlavor.imageFlavor)) return null
-            val image = clipboard.getData(DataFlavor.imageFlavor) as? Image ?: return null
+            val source = transferable ?: Toolkit.getDefaultToolkit().systemClipboard
+                .takeIf { it.isDataFlavorAvailable(DataFlavor.imageFlavor) }
+                ?.getContents(null)
+                ?: return null
+            if (!source.isDataFlavorSupported(DataFlavor.imageFlavor)) return null
+            val image = source.getTransferData(DataFlavor.imageFlavor) as? Image ?: return null
             write(toBufferedImage(image))
         } catch (e: Exception) {
-            log.warn("Could not read image from clipboard", e)
+            log.warn("Could not read the pasted image", e)
             null
         }
     }

@@ -22,6 +22,7 @@ import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.PopupStep
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
+import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -30,6 +31,10 @@ import java.awt.event.KeyEvent
 import javax.swing.AbstractAction
 import javax.swing.JButton
 import javax.swing.JComboBox
+import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.Transferable
+import javax.swing.JComponent
+import javax.swing.TransferHandler
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.KeyStroke
@@ -57,7 +62,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private val inputArea = JBTextArea(3, 40).apply {
         lineWrap = true
         wrapStyleWord = true
-        emptyText.text = "Ask Claude... (/ for commands, @ for files, Enter to send, Shift+Enter for newline)"
+        // The prompt is prose you read while writing it, so give it a little more
+        // size and room than the surrounding chrome — the default UI font at
+        // toolbar size is cramped for anything longer than a sentence.
+        font = JBFont.label().biggerOn(1.5f)
+        margin = JBUI.insets(4, 5)
+        emptyText.text = "Ask Claude…  /  commands   @  files   paste a screenshot"
     }
 
     private val modelSelector = JComboBox<ModelChoice>().apply {
@@ -259,32 +269,57 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
      * Text pastes fall through to the normal editor behaviour.
      */
     private fun installImagePaste() {
-        // Which modifier means "paste" is a platform fact, so read it from
-        // SystemInfo rather than Toolkit — asking Toolkit for it throws
-        // HeadlessException, which made the whole panel unbuildable in tests.
-        val modifier = if (com.intellij.openapi.util.SystemInfo.isMac) {
-            java.awt.event.InputEvent.META_DOWN_MASK
-        } else {
-            java.awt.event.InputEvent.CTRL_DOWN_MASK
-        }
-        val pasteKey = KeyStroke.getKeyStroke(KeyEvent.VK_V, modifier)
-        val actionKey = "claudeBrainsPasteImage"
-        val fallback = inputArea.getActionForKeyStroke(pasteKey)
-        inputArea.inputMap.put(pasteKey, actionKey)
-        inputArea.actionMap.put(actionKey, object : AbstractAction() {
-            override fun actionPerformed(e: java.awt.event.ActionEvent) {
-                if (ImageAttachments.clipboardHasImage()) {
-                    val file = ImageAttachments.saveClipboardImage()
+        // Handled through the transfer handler rather than a Ctrl+V key binding:
+        // the IDE's own $Paste action claims that shortcut before Swing key
+        // bindings run, so a binding here was routinely bypassed. Everything —
+        // IDE paste, Swing paste and drag-and-drop — funnels through importData.
+        inputArea.transferHandler = object : TransferHandler() {
+
+            override fun canImport(support: TransferSupport): Boolean =
+                support.isDataFlavorSupported(DataFlavor.imageFlavor) ||
+                    support.isDataFlavorSupported(DataFlavor.javaFileListFlavor) ||
+                    support.isDataFlavorSupported(DataFlavor.stringFlavor)
+
+            override fun importData(support: TransferSupport): Boolean {
+                // A screenshot: no file exists yet, so write one for Claude to read.
+                if (support.isDataFlavorSupported(DataFlavor.imageFlavor)) {
+                    val file = ImageAttachments.saveClipboardImage(support.transferable)
                     if (file != null) {
                         insertAtCaret("`${file.absolutePath}` ")
                         statusLabel.text = "attached ${file.name}"
-                        return
+                        return true
                     }
-                    statusLabel.text = "could not read image from clipboard"
                 }
-                fallback?.actionPerformed(e) ?: inputArea.paste()
+                // Image files dropped or copied from a file manager: reference
+                // them where they already are instead of duplicating them.
+                if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                    val files = runCatching {
+                        @Suppress("UNCHECKED_CAST")
+                        support.transferable.getTransferData(DataFlavor.javaFileListFlavor) as List<java.io.File>
+                    }.getOrNull().orEmpty()
+                    if (files.isNotEmpty()) {
+                        files.forEach { insertAtCaret("`${it.absolutePath}` ") }
+                        statusLabel.text = "attached ${files.size} file(s)"
+                        return true
+                    }
+                }
+                val text = runCatching {
+                    support.transferable.getTransferData(DataFlavor.stringFlavor) as String
+                }.getOrNull() ?: return false
+                inputArea.replaceSelection(text)
+                return true
             }
-        })
+
+            // Keep copy/cut working out of the prompt box.
+            override fun getSourceActions(c: JComponent?): Int = COPY_OR_MOVE
+
+            override fun createTransferable(c: JComponent?): Transferable? =
+                inputArea.selectedText?.let { java.awt.datatransfer.StringSelection(it) }
+
+            override fun exportDone(source: JComponent?, data: Transferable?, action: Int) {
+                if (action == MOVE) inputArea.replaceSelection("")
+            }
+        }
     }
 
     private fun copyTranscript() {
