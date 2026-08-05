@@ -30,6 +30,17 @@ class ChatPanelSmokeTest : BasePlatformTestCase() {
         panel.dispose()
     }
 
+    fun testSignInScreenBuildsForEveryAuthState() {
+        listOf(
+            com.claudecode.chatplugin.auth.AuthStatus.SignedOut,
+            com.claudecode.chatplugin.auth.AuthStatus.Unavailable("claude: command not found"),
+            com.claudecode.chatplugin.auth.AuthStatus.SignedIn("a@b.c", "pro", "claude.ai", "Org")
+        ).forEach { status ->
+            val panel = SignInPanel(project, status) { /* no-op */ }
+            assertTrue(status.toString(), panel.componentCount > 0)
+        }
+    }
+
     fun testPanelBuildsForARestoredSessionWithPinnedSettings() {
         val manager = project.getService(ClaudeSessionManager::class.java)
         val session = manager.createSession("Restored").apply {

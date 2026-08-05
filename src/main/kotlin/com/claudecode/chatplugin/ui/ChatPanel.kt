@@ -540,8 +540,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                         val reason = result.errorMessage?.takeIf { it.isNotBlank() }
                             ?: "the turn ended with an error"
                         val hint = if (result.apiErrorStatus == 401) {
-                            "\n\nYour Claude Code login has expired. Run `claude` in a terminal " +
-                                "and sign in again, then retry."
+                            "\n\nYour Claude Code login has expired. Run `claude auth login` in a " +
+                                "terminal to sign in again, then retry — or reopen this tool window " +
+                                "to get the sign-in screen."
                         } else {
                             ""
                         }

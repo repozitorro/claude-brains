@@ -1,7 +1,10 @@
 package com.claudecode.chatplugin.ui
 
 import com.claudecode.chatplugin.ClaudeSessionManager
+import com.claudecode.chatplugin.auth.AuthStatus
+import com.claudecode.chatplugin.auth.ClaudeAuth
 import com.claudecode.chatplugin.model.ClaudeSession
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -28,11 +31,37 @@ class ChatToolWindowFactory : ToolWindowFactory {
             toolWindow.contentManager.setSelectedContent(content)
         }
 
-        // Restore a tab per persisted session (or open one fresh session if none).
-        if (sessionManager.sessions.isEmpty()) {
-            addTabFor(sessionManager.getOrCreateDefault())
-        } else {
-            sessionManager.sessions.forEach { addTabFor(it) }
+        fun openChat() {
+            // Restore a tab per persisted session (or open one fresh session if none).
+            if (sessionManager.sessions.isEmpty()) {
+                addTabFor(sessionManager.getOrCreateDefault())
+            } else {
+                sessionManager.sessions.forEach { addTabFor(it) }
+            }
+        }
+
+        // Sending a prompt without a signed-in CLI just fails with a raw error,
+        // so check first and offer the sign-in screen instead of a broken chat.
+        // The check runs off the EDT; the chat opens as soon as it comes back.
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val status = ClaudeAuth.getInstance(project).status()
+            ApplicationManager.getApplication().invokeLater {
+                if (project.isDisposed || toolWindow.isDisposed) return@invokeLater
+                if (status is AuthStatus.SignedIn) {
+                    openChat()
+                    return@invokeLater
+                }
+                val gate = SignInPanel(project, status) {
+                    // Signed in now: drop the gate and open the conversations.
+                    toolWindow.contentManager.contents
+                        .filter { it.component is SignInPanel }
+                        .forEach { toolWindow.contentManager.removeContent(it, true) }
+                    openChat()
+                }
+                val content = contentFactory.createContent(gate, "Sign in", false)
+                content.isCloseable = false
+                toolWindow.contentManager.addContent(content)
+            }
         }
 
         toolWindow.contentManager.addContentManagerListener(object : ContentManagerListener {
