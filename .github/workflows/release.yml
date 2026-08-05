@@ -18,9 +18,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Check out the tagged commit itself, not main: the tag is what is being
+      # released, and main can move (or lag) between tagging and this run.
       - uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
 
       - name: Set up JDK 17
@@ -49,7 +50,7 @@ jobs:
             "claude-brains/lib/instrumented-claude-brains-$VERSION.jar" > /tmp/plugin.jar
           SINCE=$(unzip -p /tmp/plugin.jar META-INF/plugin.xml | grep -oP 'since-build="\K[^"]+')
           test -n "$SINCE"
-          cat > updatePlugins.xml <<XML
+          cat > /tmp/updatePlugins.xml <<XML
           <plugins>
             <plugin id="io.github.repozitorro.claudebrains"
                     url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/claude-brains-${VERSION}.zip"
@@ -60,7 +61,7 @@ jobs:
             </plugin>
           </plugins>
           XML
-          cat updatePlugins.xml
+          cat /tmp/updatePlugins.xml
 
       # Uses the runner's preinstalled gh rather than a third-party action.
       - name: Publish release
@@ -72,10 +73,15 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --generate-notes
 
+      # The descriptor lives on main (that's the URL IDEs poll), so land it there
+      # rather than on the detached tag commit this job is building from.
       - name: Commit updated plugin repository descriptor
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          cp /tmp/updatePlugins.xml updatePlugins.xml
           git add updatePlugins.xml
           git diff --staged --quiet || git commit -m "Point plugin repository at ${GITHUB_REF_NAME}"
-          git push origin HEAD:main
+          git push origin main
