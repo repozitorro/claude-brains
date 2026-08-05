@@ -23,6 +23,16 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.3.5</b>
+        <ul>
+            <li>Pasting a screenshot into the prompt, properly this time. The
+                previous attempts hooked places the shortcut never reaches: inside
+                the IDE, Ctrl+V is taken by the global paste action, which writes
+                into the field directly. Image paste is now an action registered
+                on the prompt itself, which outranks the global one, and it picks
+                up whatever shortcut your keymap uses for paste.</li>
+        </ul>
+
         <b>0.3.4</b>
         <ul>
             <li>A proper icon: a top-down brain in line art, replacing the
