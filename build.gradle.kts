@@ -7,7 +7,8 @@ plugins {
 }
 
 group = "com.claudecode"
-version = "0.1.0"
+// Overridable from CI: ./gradlew buildPlugin -PpluginVersion=0.2.0
+version = property("pluginVersion") as String
 
 repositories {
     mavenCentral()
@@ -41,9 +42,11 @@ tasks {
 
     patchPluginXml {
         sinceBuild.set("241")
-        // Widen the upper bound so the plugin also loads in 2024.2–2025.x IDEs.
-        // It only uses stable platform APIs, so a broad range is safe here.
-        untilBuild.set("252.*")
+        // No upper bound: an explicit untilBuild makes the IDE refuse to install
+        // the plugin on any newer release (2026.1 is build 261, so "252.*" locked
+        // it out). Only stable platform APIs are used, so let it load anywhere
+        // from 2024.1 up and fix things if a future release actually breaks it.
+        untilBuild.set(provider { null })
     }
 
     // Skip the buggy in-place plugin verifier by default; run manually with

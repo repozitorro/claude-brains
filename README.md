@@ -90,6 +90,40 @@ To build an installable `.zip` you can add to WebStorm directly (**Settings
 # output: build/distributions/claude-brains-0.1.0.zip
 ```
 
+## Installing in WebStorm (and keeping it updated)
+
+**Recommended — as a plugin repository, so the IDE handles updates itself:**
+
+1. WebStorm → **Settings → Plugins → ⚙️ → Manage Plugin Repositories… → +**
+2. Add:
+   `https://raw.githubusercontent.com/repozitorro/claude-brains/main/updatePlugins.xml`
+3. Search **Claude Brains** on the *Marketplace* tab and install it.
+
+From then on, updates arrive the normal way: tag a release
+(`git tag v0.2.0 && git push origin v0.2.0`), CI publishes it, and WebStorm
+offers the update.
+
+**One-off — install a zip directly:**
+
+```bash
+./gradlew buildPlugin
+```
+
+then **Settings → Plugins → ⚙️ → Install Plugin from Disk…** and pick
+`build/distributions/claude-brains-<version>.zip`. Every later update means
+repeating this by hand, which is why the repository route above exists. A zip
+is also attached to every CI run and every GitHub release, if you'd rather not
+build locally.
+
+**While developing**, skip installing altogether:
+
+```bash
+./gradlew runIde
+```
+
+That launches a sandboxed IDE with the plugin loaded, leaving your real
+WebStorm untouched.
+
 ## Status
 
 The build is verified end-to-end: `./gradlew buildPlugin` produces an
