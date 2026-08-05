@@ -23,6 +23,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.3.4</b>
+        <ul>
+            <li>A proper icon: a top-down brain in line art, replacing the
+                placeholder</li>
+            <li><b>Pasting a screenshot into the prompt now works.</b> It was
+                bound to Ctrl+V, which the IDE claims for its own paste action,
+                so it usually did nothing; it now goes through the text area's
+                transfer handler — and dragging an image in works too</li>
+            <li>A larger, roomier prompt font</li>
+        </ul>
+
         <b>0.3.3</b>
         <ul>
             <li>An expired login is now actionable: the failed turn shows a
