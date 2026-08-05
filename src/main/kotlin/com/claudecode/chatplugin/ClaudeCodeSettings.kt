@@ -10,7 +10,8 @@ class ClaudeCodeSettings : PersistentStateComponent<ClaudeCodeSettings.State> {
     data class State(
         var claudeCommand: String = "claude",
         var defaultModel: String = "",      // empty = let the CLI pick its default
-        var permissionMode: String = "default", // default | acceptEdits | plan | bypassPermissions
+        // Empty = pass no --permission-mode flag and let the CLI decide.
+        var permissionMode: String = "",
         var allowedTools: String = "",      // space/comma list passed to --allowedTools, empty = don't pass
         var disallowedTools: String = ""    // passed to --disallowedTools, empty = don't pass
     )
@@ -43,8 +44,6 @@ class ClaudeCodeSettings : PersistentStateComponent<ClaudeCodeSettings.State> {
         set(value) { state.disallowedTools = value }
 
     companion object {
-        val PERMISSION_MODES = listOf("default", "acceptEdits", "plan", "bypassPermissions")
-
         fun getInstance(project: Project): ClaudeCodeSettings =
             project.getService(ClaudeCodeSettings::class.java)
     }

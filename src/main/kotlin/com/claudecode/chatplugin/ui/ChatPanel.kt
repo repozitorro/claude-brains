@@ -5,6 +5,8 @@ import com.claudecode.chatplugin.ClaudeCodeSettings
 import com.claudecode.chatplugin.model.ChatMessage
 import com.claudecode.chatplugin.model.ClaudeSession
 import com.claudecode.chatplugin.model.FileEdit
+import com.claudecode.chatplugin.model.ModelChoice
+import com.claudecode.chatplugin.model.PermissionChoice
 import com.claudecode.chatplugin.model.Role
 import com.claudecode.chatplugin.model.ToolCall
 import com.intellij.icons.AllIcons
@@ -58,23 +60,36 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         emptyText.text = "Ask Claude... (/ for commands, @ for files, Enter to send, Shift+Enter for newline)"
     }
 
-    // Model aliases are accepted by `claude --model` and stay valid across
-    // point releases, unlike pinned ids.
-    private val modelSelector = JComboBox(arrayOf("(default)", "opus", "sonnet", "haiku")).apply {
+    private val modelSelector = JComboBox<ModelChoice>().apply {
         // A fresh session adopts the configured default (otherwise that setting
         // would only ever be cosmetic); a restored session keeps its own model.
         if (session.selectedModel == null) {
             session.selectedModel = settings.defaultModel.takeIf { it.isNotBlank() }
         }
-        val current = session.selectedModel
-        // A persisted model may be a pinned id that isn't one of the aliases above.
-        if (current != null && (0 until itemCount).none { getItemAt(it) == current }) addItem(current)
-        selectedItem = current ?: "(default)"
+        val current = ModelChoice.forId(session.selectedModel)
+        ModelChoice.ALL.forEach { addItem(it) }
+        if (ModelChoice.ALL.none { it.id == current.id }) addItem(current) // a pinned id we don't list
+        selectedItem = current
+        toolTipText = "Model for this chat"
+
+        addActionListener { session.selectedModel = (selectedItem as ModelChoice).id }
+    }
+
+    private val modeSelector = JComboBox<PermissionChoice>().apply {
+        PermissionChoice.ALL.forEach { addItem(it) }
+        selectedItem = PermissionChoice.forId(session.permissionMode ?: settings.permissionMode)
+        updateModeTooltip(selectedItem as PermissionChoice)
 
         addActionListener {
-            val choice = selectedItem as String
-            session.selectedModel = if (choice == "(default)") null else choice
+            val choice = selectedItem as PermissionChoice
+            session.permissionMode = choice.id
+            updateModeTooltip(choice)
         }
+    }
+
+    private fun updateModeTooltip(choice: PermissionChoice) {
+        modeSelector.toolTipText =
+            if (choice.hint.isNotBlank()) choice.hint else "Permission mode for this chat"
     }
 
     private val statusLabel = JLabel(" ").apply {
@@ -83,7 +98,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         border = JBUI.Borders.empty(0, 6)
     }
 
-    private val sendButton = JButton("Send").apply {
+    private val composer = ComposerPanel(JBUI.CurrentTheme.Focus.focusColor())
+
+    private val sendButton = JButton("Send", AllIcons.Actions.Execute).apply {
+        toolTipText = "Send (Enter)"
         addActionListener { onSendOrStop() }
     }
 
@@ -104,8 +122,15 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     init {
         preferredSize = Dimension(420, 600)
 
-        val transcriptButtons = JPanel(BorderLayout()).apply {
-            add(statusLabel, BorderLayout.CENTER)
+        // Top bar: what this chat runs as (model, permission mode) on the left,
+        // what you can do with the transcript on the right.
+        val topBar = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.empty(4, 6, 2, 4)
+            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply {
+                isOpaque = false
+                add(modelSelector)
+                add(modeSelector)
+            }, BorderLayout.WEST)
             add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0)).apply {
                 isOpaque = false
                 add(iconButton(AllIcons.Actions.Copy, "Copy the conversation as Markdown") { copyTranscript() })
@@ -113,25 +138,41 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }, BorderLayout.EAST)
         }
 
-        val topBar = JPanel(BorderLayout()).apply {
-            add(JLabel("  Model:"), BorderLayout.WEST)
-            add(modelSelector, BorderLayout.CENTER)
-            add(transcriptButtons, BorderLayout.EAST)
+        // Composer: one card holding the prompt, with its controls on a footer
+        // row — the image button and the usage readout on the left, Send right.
+        inputArea.apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(2)
+            rows = 3
         }
-
-        val buttons = JPanel(BorderLayout()).apply {
-            add(attachButton, BorderLayout.WEST)
+        val composerFooter = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.emptyTop(4)
+            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply {
+                isOpaque = false
+                add(attachButton)
+                add(statusLabel)
+            }, BorderLayout.WEST)
             add(sendButton, BorderLayout.EAST)
         }
-        val inputPanel = JPanel(BorderLayout()).apply {
-            border = JBUI.Borders.empty(4)
-            add(JBScrollPane(inputArea), BorderLayout.CENTER)
-            add(buttons, BorderLayout.EAST)
+        composer.add(inputArea, BorderLayout.CENTER)
+        composer.add(composerFooter, BorderLayout.SOUTH)
+
+        val composerWrapper = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.empty(4, 6, 6, 6)
+            isOpaque = false
+            add(composer, BorderLayout.CENTER)
         }
 
         add(topBar, BorderLayout.NORTH)
         add(chatView.component, BorderLayout.CENTER)
-        add(inputPanel, BorderLayout.SOUTH)
+        add(composerWrapper, BorderLayout.SOUTH)
+
+        // The card's outline follows focus, like the IDE's own input fields.
+        inputArea.addFocusListener(object : java.awt.event.FocusAdapter() {
+            override fun focusGained(e: java.awt.event.FocusEvent) { composer.focused = true }
+            override fun focusLost(e: java.awt.event.FocusEvent) { composer.focused = false }
+        })
 
         installSlashCommandPopup()
         installEnterToSend()
@@ -298,6 +339,8 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
     private fun setBusy(busy: Boolean) {
         sendButton.text = if (busy) "Stop" else "Send"
+        sendButton.icon = if (busy) AllIcons.Actions.Suspend else AllIcons.Actions.Execute
+        sendButton.toolTipText = if (busy) "Stop this turn" else "Send (Enter)"
         if (busy) statusLabel.text = "…thinking" else updateAnalyticsLabel()
     }
 

@@ -15,8 +15,11 @@ class ClaudeSession(var displayName: String) {
     /** The CLI's own session id, captured from the first streamed response. */
     var cliSessionId: String? = null
 
-    /** Model override, e.g. "claude-sonnet-4-6". Null = CLI default. */
+    /** Model override, e.g. "claude-opus-5" or the alias "opus". Null = CLI default. */
     var selectedModel: String? = null
+
+    /** Permission mode for this chat. Null = fall back to the project setting. */
+    var permissionMode: String? = null
 
     @Volatile
     var isBusy: Boolean = false

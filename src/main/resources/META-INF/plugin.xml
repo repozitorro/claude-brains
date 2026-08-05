@@ -23,6 +23,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.3.0</b>
+        <ul>
+            <li>Pick a <b>specific model</b> per chat — Opus 5, Opus 4.8, Sonnet 5,
+                Sonnet 4.6, Haiku 4.5, Fable 5 — or a family alias that follows
+                the newest release</li>
+            <li><b>Permission mode per chat</b>, straight from the toolbar, with
+                the full set the CLI accepts</li>
+            <li>Redesigned prompt composer: one rounded card that highlights on
+                focus, with the image button, usage readout and Send inside it</li>
+        </ul>
+
         <b>0.2.0</b>
         <ul>
             <li><b>Usage statistics</b> — token usage by project, git branch, model

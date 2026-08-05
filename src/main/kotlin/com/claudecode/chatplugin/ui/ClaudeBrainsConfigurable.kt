@@ -2,6 +2,8 @@ package com.claudecode.chatplugin.ui
 
 import com.claudecode.chatplugin.ClaudeCliService
 import com.claudecode.chatplugin.ClaudeCodeSettings
+import com.claudecode.chatplugin.model.ModelChoice
+import com.claudecode.chatplugin.model.PermissionChoice
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
@@ -24,8 +26,10 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
     private val settings = ClaudeCodeSettings.getInstance(project)
 
     private val commandField = JBTextField()
-    private val modelCombo = JComboBox(arrayOf("(default)", "opus", "sonnet", "haiku"))
-    private val permissionCombo = JComboBox(ClaudeCodeSettings.PERMISSION_MODES.toTypedArray())
+    private val modelCombo = JComboBox<ModelChoice>().apply { ModelChoice.ALL.forEach { addItem(it) } }
+    private val permissionCombo = JComboBox<PermissionChoice>().apply {
+        PermissionChoice.ALL.forEach { addItem(it) }
+    }
     private val allowedField = JBTextField()
     private val disallowedField = JBTextField()
 
@@ -59,9 +63,10 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             .addLabeledComponent("Allowed tools (space/comma):", allowedField, 1, false)
             .addLabeledComponent("Disallowed tools (space/comma):", disallowedField, 1, false)
             .addComponent(JLabel(
-                "<html><small>Permission modes: <b>default</b> asks per action; " +
-                    "<b>acceptEdits</b> auto-accepts file edits; <b>plan</b> is read-only planning; " +
-                    "<b>bypassPermissions</b> runs everything without prompts (use with care).</small></html>"
+                "<html><small>Defaults for new chats — each chat can override both from its own toolbar.<br>" +
+                    "<b>Ask</b> leaves the CLI on its configured default; <b>Accept edits</b> applies file " +
+                    "edits without asking; <b>Plan</b> is read-only; <b>Bypass permissions</b> runs everything " +
+                    "unprompted. The remaining modes are passed through to the CLI as-is.</small></html>"
             ))
             .addSeparator()
             .addLabeledComponent("MCP servers:", refreshMcpButton, 1, false)
@@ -76,28 +81,25 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             .panel
     }
 
-    private fun modelToCombo(v: String) = v.ifBlank { "(default)" }
-    private fun comboToModel(v: String) = if (v == "(default)") "" else v
-
     override fun isModified(): Boolean =
         commandField.text != settings.claudeCommand ||
-            comboToModel(modelCombo.selectedItem as String) != settings.defaultModel ||
-            (permissionCombo.selectedItem as String) != settings.permissionMode ||
+            (modelCombo.selectedItem as ModelChoice).id.orEmpty() != settings.defaultModel ||
+            (permissionCombo.selectedItem as PermissionChoice).id.orEmpty() != settings.permissionMode ||
             allowedField.text != settings.allowedTools ||
             disallowedField.text != settings.disallowedTools
 
     override fun apply() {
         settings.claudeCommand = commandField.text.trim().ifBlank { "claude" }
-        settings.defaultModel = comboToModel(modelCombo.selectedItem as String)
-        settings.permissionMode = permissionCombo.selectedItem as String
+        settings.defaultModel = (modelCombo.selectedItem as ModelChoice).id.orEmpty()
+        settings.permissionMode = (permissionCombo.selectedItem as PermissionChoice).id.orEmpty()
         settings.allowedTools = allowedField.text.trim()
         settings.disallowedTools = disallowedField.text.trim()
     }
 
     override fun reset() {
         commandField.text = settings.claudeCommand
-        modelCombo.selectedItem = modelToCombo(settings.defaultModel)
-        permissionCombo.selectedItem = settings.permissionMode
+        modelCombo.selectedItem = ModelChoice.forId(settings.defaultModel)
+        permissionCombo.selectedItem = PermissionChoice.forId(settings.permissionMode)
         allowedField.text = settings.allowedTools
         disallowedField.text = settings.disallowedTools
     }

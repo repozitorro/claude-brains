@@ -67,6 +67,7 @@ class ClaudeSessionManager(private val project: Project) :
             ps.displayName = s.displayName
             ps.cliSessionId = s.cliSessionId
             ps.selectedModel = s.selectedModel
+            ps.permissionMode = s.permissionMode
             ps.totalCostUsd = s.totalCostUsd
             ps.totalInputTokens = s.totalInputTokens
             ps.totalOutputTokens = s.totalOutputTokens
@@ -106,6 +107,7 @@ class ClaudeSessionManager(private val project: Project) :
             val session = ClaudeSession(ps.displayName.ifBlank { "Chat ${counter.incrementAndGet()}" })
             session.cliSessionId = ps.cliSessionId
             session.selectedModel = ps.selectedModel
+            session.permissionMode = ps.permissionMode
             session.totalCostUsd = ps.totalCostUsd
             session.totalInputTokens = ps.totalInputTokens
             session.totalOutputTokens = ps.totalOutputTokens
@@ -126,6 +128,7 @@ class ClaudeSessionManager(private val project: Project) :
         var displayName: String = ""
         var cliSessionId: String? = null
         var selectedModel: String? = null
+        var permissionMode: String? = null
         var totalCostUsd: Double = 0.0
         var totalInputTokens: Long = 0
         var totalOutputTokens: Long = 0
