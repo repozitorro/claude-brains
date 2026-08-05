@@ -269,10 +269,23 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
      * Text pastes fall through to the normal editor behaviour.
      */
     private fun installImagePaste() {
-        // Handled through the transfer handler rather than a Ctrl+V key binding:
-        // the IDE's own $Paste action claims that shortcut before Swing key
-        // bindings run, so a binding here was routinely bypassed. Everything —
-        // IDE paste, Swing paste and drag-and-drop — funnels through importData.
+        // Ctrl+V never reaches Swing here: the IDE's $Paste action takes the
+        // shortcut first and pastes text straight into the component, without
+        // consulting the transfer handler. An action registered *on the
+        // component* outranks the global one, so that is where image paste has
+        // to live; anything that isn't an image is handed back to normal paste.
+        val pasteImage = object : com.intellij.openapi.project.DumbAwareAction() {
+            override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                if (!pasteImageFromClipboard()) inputArea.paste()
+            }
+        }
+        val pasteShortcuts = com.intellij.openapi.actionSystem.ActionManager.getInstance()
+            .getAction(com.intellij.openapi.actionSystem.IdeActions.ACTION_PASTE)
+            ?.shortcutSet
+        if (pasteShortcuts != null) pasteImage.registerCustomShortcutSet(pasteShortcuts, inputArea)
+
+        // The transfer handler still covers drag-and-drop, and paste on any
+        // platform where the action route doesn't apply.
         inputArea.transferHandler = object : TransferHandler() {
 
             override fun canImport(support: TransferSupport): Boolean =
@@ -289,6 +302,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                         statusLabel.text = "attached ${file.name}"
                         return true
                     }
+                    statusLabel.text = "could not read the dropped image"
                 }
                 // Image files dropped or copied from a file manager: reference
                 // them where they already are instead of duplicating them.
@@ -340,6 +354,41 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         } catch (e: Exception) {
             Messages.showErrorDialog(project, "Could not write the file: ${e.message}", "Claude Brains")
         }
+    }
+
+    /**
+     * Saves an image sitting on the clipboard and references it in the prompt.
+     * Returns false when the clipboard holds no image, so the caller can fall
+     * back to an ordinary paste.
+     *
+     * Reads through the IDE's own [CopyPasteManager] first — inside the IDE that
+     * is the authoritative view of the clipboard — and only then the AWT one.
+     */
+    private fun pasteImageFromClipboard(): Boolean {
+        val contents = runCatching { CopyPasteManager.getInstance().contents }.getOrNull()
+            ?: runCatching {
+                java.awt.Toolkit.getDefaultToolkit().systemClipboard.getContents(null)
+            }.getOrNull()
+
+        // Logged because this path is invisible when it goes wrong: an image
+        // paste that quietly does nothing is indistinguishable from a shortcut
+        // that never reached us. The flavour list says which of the two it was.
+        LOG.info(
+            "paste into prompt: clipboard=" +
+                (contents?.transferDataFlavors?.joinToString { it.humanPresentableName } ?: "unavailable")
+        )
+        if (contents == null) return false
+
+        if (!contents.isDataFlavorSupported(DataFlavor.imageFlavor)) return false
+
+        val file = ImageAttachments.saveClipboardImage(contents)
+        if (file == null) {
+            statusLabel.text = "could not read the image from the clipboard"
+            return false
+        }
+        insertAtCaret("`${file.absolutePath}` ")
+        statusLabel.text = "attached ${file.name}"
+        return true
     }
 
     private fun chooseImage() {
@@ -725,6 +774,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     private companion object {
+        private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(ChatPanel::class.java)
         val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
         const val RENDER_INTERVAL_MS = 50
     }
