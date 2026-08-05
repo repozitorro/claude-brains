@@ -101,6 +101,47 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
     private val composer = ComposerPanel(JBUI.CurrentTheme.Focus.focusColor())
 
+    /**
+     * Shown when a turn comes back 401.
+     *
+     * `claude auth status` reports a stored login as valid even once its token
+     * has expired (verified against CLI 2.1.205), so an expired session can only
+     * be discovered when a request actually fails. Rather than leaving the user
+     * with an error to read, the failure carries the way out with it.
+     */
+    private val authBanner: JPanel = createAuthBanner()
+
+    /**
+     * Built in a function so the Dismiss button can close over a local rather
+     * than the property it is initializing — the compiler rejects the latter,
+     * and routing around that check through a method is exactly what produced
+     * the empty tool window in 0.3.1.
+     */
+    private fun createAuthBanner(): JPanel {
+        val banner = JPanel(BorderLayout())
+        banner.isVisible = false
+        banner.border = JBUI.Borders.compound(
+            JBUI.Borders.customLine(JBUI.CurrentTheme.NotificationWarning.borderColor(), 0, 0, 1, 0),
+            JBUI.Borders.empty(6, 8)
+        )
+        banner.background = JBUI.CurrentTheme.NotificationWarning.backgroundColor()
+        banner.add(
+            JLabel("Your Claude Code login has expired.").apply {
+                foreground = JBUI.CurrentTheme.NotificationWarning.foregroundColor()
+            },
+            BorderLayout.CENTER
+        )
+        banner.add(
+            JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0)).apply {
+                isOpaque = false
+                add(JButton("Sign in").apply { addActionListener { signInFromBanner() } })
+                add(JButton("Dismiss").apply { addActionListener { banner.isVisible = false } })
+            },
+            BorderLayout.EAST
+        )
+        return banner
+    }
+
     private val sendButton = JButton("Send", AllIcons.Actions.Execute).apply {
         toolTipText = "Send (Enter)"
         addActionListener { onSendOrStop() }
@@ -165,7 +206,14 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             add(composer, BorderLayout.CENTER)
         }
 
-        add(topBar, BorderLayout.NORTH)
+        add(
+            JPanel(BorderLayout()).apply {
+                isOpaque = false
+                add(authBanner, BorderLayout.NORTH)
+                add(topBar, BorderLayout.CENTER)
+            },
+            BorderLayout.NORTH
+        )
         add(chatView.component, BorderLayout.CENTER)
         add(composerWrapper, BorderLayout.SOUTH)
 
@@ -402,6 +450,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 chatView.clear()
                 addSystemBubble("Conversation cleared — the next message starts a fresh context.")
             }
+            // The CLI's own /login is interactive-only, but signing in is exactly
+            // what someone typing it wants — so run the real sign-in instead of
+            // turning them away.
+            "/login" -> signInFromBanner()
             "/cost" -> addSystemBubble(analyticsSummary())
             "/model" -> {
                 modelSelector.showPopup()
@@ -412,6 +464,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     "- `/clear` — start a fresh context\n" +
                     "- `/cost` — show this session's token/cost usage\n" +
                     "- `/model` — switch model (or use the dropdown)\n" +
+                    "- `/login` — sign in again (opens a terminal)\n" +
                     "- `/help` — this list\n\n" +
                     "Type `@` to reference a project file by path.\n\n" +
                     "Other Claude Code slash commands are interactive-terminal only and don't apply here."
@@ -428,6 +481,21 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }
         }
         return true
+    }
+
+    /** Hands sign-in to the CLI in a terminal; credentials never enter the plugin. */
+    private fun signInFromBanner() {
+        val auth = com.claudecode.chatplugin.auth.ClaudeAuth.getInstance(project)
+        val launched = auth.launchSignIn()
+        addSystemBubble(
+            if (launched) {
+                "A terminal is running `${auth.signInCommand()}`. Finish signing in there, " +
+                    "then send your message again."
+            } else {
+                "Couldn't open a terminal. Run `${auth.signInCommand()}` yourself, " +
+                    "then send your message again."
+            }
+        )
     }
 
     private fun analyticsSummary(): String = if (session.turnCount == 0) {
@@ -548,9 +616,8 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                         val reason = result.errorMessage?.takeIf { it.isNotBlank() }
                             ?: "the turn ended with an error"
                         val hint = if (result.apiErrorStatus == 401) {
-                            "\n\nYour Claude Code login has expired. Run `claude auth login` in a " +
-                                "terminal to sign in again, then retry — or reopen this tool window " +
-                                "to get the sign-in screen."
+                            authBanner.isVisible = true
+                            "\n\nSign in again using the banner above, then send this message once more."
                         } else {
                             ""
                         }
