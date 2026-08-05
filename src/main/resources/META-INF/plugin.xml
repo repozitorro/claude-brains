@@ -23,6 +23,12 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.3.2</b>
+        <ul>
+            <li>Fixes the tool window opening empty ("Nothing to show") in 0.3.1:
+                building the panel threw before any tab was added</li>
+        </ul>
+
         <b>0.3.1</b>
         <ul>
             <li>Pick a <b>specific model</b> per chat — Opus 5, Opus 4.8, Sonnet 5,

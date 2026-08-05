@@ -78,19 +78,20 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private val modeSelector = JComboBox<PermissionChoice>().apply {
         PermissionChoice.ALL.forEach { addItem(it) }
         selectedItem = PermissionChoice.forId(session.permissionMode ?: settings.permissionMode)
-        updateModeTooltip(selectedItem as PermissionChoice)
+        // Set the tooltip on the combo itself: the `modeSelector` property is
+        // still null while its own initializer runs, and reaching for it here
+        // threw an NPE that took the whole tool window down with it.
+        toolTipText = modeTooltip(selectedItem as PermissionChoice)
 
         addActionListener {
             val choice = selectedItem as PermissionChoice
             session.permissionMode = choice.id
-            updateModeTooltip(choice)
+            toolTipText = modeTooltip(choice)
         }
     }
 
-    private fun updateModeTooltip(choice: PermissionChoice) {
-        modeSelector.toolTipText =
-            if (choice.hint.isNotBlank()) choice.hint else "Permission mode for this chat"
-    }
+    private fun modeTooltip(choice: PermissionChoice): String =
+        if (choice.hint.isNotBlank()) choice.hint else "Permission mode for this chat"
 
     private val statusLabel = JLabel(" ").apply {
         font = font.deriveFont(10f)
