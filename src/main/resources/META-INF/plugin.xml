@@ -1,0 +1,71 @@
+<idea-plugin>
+    <id>com.claudecode.chatplugin</id>
+    <name>Claude Brains</name>
+    <vendor>claude-brains</vendor>
+
+    <description><![CDATA[
+        Claude Brains — a chat UI front-end for the Claude Code CLI, right inside
+        your JetBrains IDE (WebStorm, IntelliJ IDEA, PyCharm, etc). Wraps the
+        <code>claude</code> CLI as a subprocess instead of relying on a bare terminal:
+        <ul>
+            <li>Streaming chat panel with markdown rendering</li>
+            <li>Multiple named, parallel sessions</li>
+            <li>Slash-command autocomplete</li>
+            <li>Model selector</li>
+            <li>Send selected code / whole file to Claude with one action</li>
+            <li>Floating prompt popup near the caret</li>
+        </ul>
+        Requires the Claude Code CLI to be installed separately and available on
+        PATH (or configured with a full path in Settings).
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Claude Brains"
+                    secondary="true"
+                    icon="/icons/claude.svg"
+                    anchor="right"
+                    factoryClass="com.claudecode.chatplugin.ui.ChatToolWindowFactory"/>
+
+        <!-- ClaudeSessionManager, ClaudeCliService and ClaudeCodeSettings are all
+             annotated with @Service and are auto-registered as "light services" -
+             no explicit <projectService> declaration needed on modern platforms. -->
+
+        <projectConfigurable
+            parentId="tools"
+            id="com.claudecode.chatplugin.settings"
+            displayName="Claude Brains"
+            instance="com.claudecode.chatplugin.ui.ClaudeBrainsConfigurable"/>
+
+        <notificationGroup id="Claude Brains" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <group id="ClaudeCodeChat.EditorPopup" text="Claude Brains" popup="true">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+
+            <action id="ClaudeCodeChat.SendSelection"
+                    class="com.claudecode.chatplugin.actions.SendSelectionToClaudeAction"
+                    text="Send Selection to Claude"
+                    description="Send the highlighted code to the Claude Code chat panel"/>
+
+            <action id="ClaudeCodeChat.SendFile"
+                    class="com.claudecode.chatplugin.actions.SendFileToClaudeAction"
+                    text="Reference This File in Chat"
+                    description="Mention this file's path in the chat so Claude can read it itself"/>
+        </group>
+
+        <action id="ClaudeCodeChat.FloatingPrompt"
+                class="com.claudecode.chatplugin.actions.FloatingPromptAction"
+                text="Claude Code: Floating Prompt"
+                description="Open a lightweight prompt popup near the caret">
+            <keyboard-shortcut keymap="$default" first-keystroke="alt shift C"/>
+        </action>
+
+        <action id="ClaudeCodeChat.NewSession"
+                class="com.claudecode.chatplugin.actions.NewSessionAction"
+                text="Claude Code: New Chat Session"
+                description="Start a new named Claude Code chat session"/>
+    </actions>
+</idea-plugin>
