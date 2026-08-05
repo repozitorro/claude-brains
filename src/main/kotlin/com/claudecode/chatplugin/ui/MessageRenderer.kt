@@ -35,22 +35,45 @@ object MessageRenderer {
         .replace(">", "&gt;")
         .replace("\n", "<br/>")
 
-    private fun thinkingBlock(inner: String): String =
-        "<div style='color:#888888; font-style:italic; border-left:2px solid #666666; " +
-            "padding-left:8px; margin-bottom:6px; white-space:pre-wrap;'>$inner</div>"
+    /**
+     * Reasoning, collapsed by default. `<details>` is native in the JCEF view;
+     * the Swing fallback's HTML 3.2 engine ignores the tag and simply shows the
+     * content, which is an acceptable degradation.
+     */
+    private fun thinkingBlock(inner: String, streaming: Boolean): String =
+        "<details${if (streaming) " open" else ""} style='margin-bottom:6px;'>" +
+            "<summary style='color:#888888; font-size:11px; cursor:pointer;'>Reasoning</summary>" +
+            "<div style='color:#888888; font-style:italic; border-left:2px solid #666666; " +
+            "padding-left:8px; white-space:pre-wrap;'>$inner</div></details>"
 
     private fun toolCallsBlock(calls: List<ToolCall>): String {
         if (calls.isEmpty()) return ""
-        val rows = calls.joinToString("<br/>") { tc ->
+        val rows = calls.joinToString("") { tc ->
             val (glyph, color) = when (tc.status) {
                 ToolCall.Status.OK -> "&#10003;" to "#7a9a7a"       // ✓
                 ToolCall.Status.ERROR -> "&#10007;" to "#c86a6a"    // ✗
                 ToolCall.Status.RUNNING -> "&#128295;" to "#7a9a7a" // 🔧
             }
-            "<span style='color:$color;'>$glyph " + escape(tc.display) + "</span>"
+            val label = "<span style='color:$color;'>$glyph " + escape(tc.display) + "</span>"
+            val output = tc.output
+            if (output.isNullOrBlank()) {
+                "<div>$label</div>"
+            } else {
+                // Failures open by default — that's the output you actually need.
+                val open = if (tc.status == ToolCall.Status.ERROR) " open" else ""
+                "<details$open><summary style='cursor:pointer; list-style:none;'>$label</summary>" +
+                    "<pre style='margin:2px 0 6px 14px; font-size:11px; white-space:pre-wrap;'>" +
+                    escapeKeepNewlines(output) + "</pre></details>"
+            }
         }
         return "<div style='font-family:monospace; font-size:11px; margin:4px 0;'>$rows</div>"
     }
+
+    /** Escapes for display inside `<pre>`, where real newlines already break lines. */
+    private fun escapeKeepNewlines(raw: String): String = raw
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
 
     private fun editsBlock(edits: List<FileEdit>, msgIndex: Int, withLinks: Boolean): String {
         if (edits.isEmpty()) return ""
@@ -79,7 +102,12 @@ object MessageRenderer {
     fun fragment(message: ChatMessage, msgIndex: Int, streaming: Boolean): String {
         val body = StringBuilder()
         if (message.thinking.isNotBlank()) {
-            body.append(thinkingBlock(if (streaming) escape(message.thinking) else md(message.thinking)))
+            body.append(
+                thinkingBlock(
+                    if (streaming) escape(message.thinking) else md(message.thinking),
+                    streaming // keep it open while it streams, collapsed once done
+                )
+            )
         }
         body.append(toolCallsBlock(message.toolCalls))
         body.append(editsBlock(message.edits, msgIndex, withLinks = !streaming))

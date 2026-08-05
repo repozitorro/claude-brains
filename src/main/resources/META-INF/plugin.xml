@@ -1,7 +1,9 @@
 <idea-plugin>
-    <id>com.claudecode.chatplugin</id>
+    <!-- Reverse-domain id under a namespace the author controls. Note this differs
+         from the Kotlin package (com.claudecode.chatplugin), which is fine. -->
+    <id>io.github.repozitorro.claudebrains</id>
     <name>Claude Brains</name>
-    <vendor>claude-brains</vendor>
+    <vendor url="https://github.com/repozitorro/claude-brains">repozitorro</vendor>
 
     <description><![CDATA[
         Claude Brains — a chat UI front-end for the Claude Code CLI, right inside
@@ -16,8 +18,22 @@
             <li>Floating prompt popup near the caret</li>
         </ul>
         Requires the Claude Code CLI to be installed separately and available on
-        PATH (or configured with a full path in Settings).
+        PATH (or configured with a full path in Settings). It runs the CLI as a
+        subprocess and reuses its existing login, so no API key is needed.
     ]]></description>
+
+    <change-notes><![CDATA[
+        <b>0.1.0</b>
+        <ul>
+            <li>Streaming chat with reasoning, rendered in an embedded browser
+                (markdown + syntax highlighting), with a Swing fallback</li>
+            <li>Tool activity with result status and collapsible output</li>
+            <li>File edits reviewable in the native diff viewer, with per-file
+                and whole-turn revert</li>
+            <li>Persistent parallel sessions, usage analytics, permission modes,
+                MCP server view, @-file references, image input, transcript export</li>
+        </ul>
+    ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
 

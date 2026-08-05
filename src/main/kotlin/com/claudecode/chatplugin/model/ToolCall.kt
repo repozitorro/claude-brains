@@ -8,7 +8,9 @@ package com.claudecode.chatplugin.model
 data class ToolCall(
     val id: String?,
     val display: String,
-    var status: Status = Status.RUNNING
+    var status: Status = Status.RUNNING,
+    /** Trimmed result text (command output, error message), shown collapsed. */
+    var output: String? = null
 ) {
     enum class Status { RUNNING, OK, ERROR }
 }

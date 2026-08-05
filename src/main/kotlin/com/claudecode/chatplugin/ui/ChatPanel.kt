@@ -10,7 +10,11 @@ import com.claudecode.chatplugin.model.ToolCall
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
+import com.intellij.openapi.fileChooser.FileChooserFactory
+import com.intellij.openapi.fileChooser.FileSaverDescriptor
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.PopupStep
 import com.intellij.ui.components.JBScrollPane
@@ -90,10 +94,24 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     init {
         preferredSize = Dimension(420, 600)
 
+        val transcriptButtons = JPanel(BorderLayout()).apply {
+            add(statusLabel, BorderLayout.CENTER)
+            add(JPanel().apply {
+                add(JButton("📋").apply {
+                    toolTipText = "Copy the conversation as Markdown"
+                    addActionListener { copyTranscript() }
+                })
+                add(JButton("💾").apply {
+                    toolTipText = "Export the conversation to a Markdown file"
+                    addActionListener { exportTranscript() }
+                })
+            }, BorderLayout.EAST)
+        }
+
         val topBar = JPanel(BorderLayout()).apply {
             add(JLabel("  Model:"), BorderLayout.WEST)
             add(modelSelector, BorderLayout.CENTER)
-            add(statusLabel, BorderLayout.EAST)
+            add(transcriptButtons, BorderLayout.EAST)
         }
 
         val buttons = JPanel(BorderLayout()).apply {
@@ -164,6 +182,26 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 fallback?.actionPerformed(e) ?: inputArea.paste()
             }
         })
+    }
+
+    private fun copyTranscript() {
+        val markdown = TranscriptExporter.toMarkdown(session)
+        CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(markdown))
+        statusLabel.text = "conversation copied"
+    }
+
+    private fun exportTranscript() {
+        val descriptor = FileSaverDescriptor("Export Conversation", "Save the transcript as Markdown", "md")
+        val suggested = session.displayName.replace(Regex("[^A-Za-z0-9._-]"), "-") + ".md"
+        val target = FileChooserFactory.getInstance()
+            .createSaveFileDialog(descriptor, project)
+            .save(null as com.intellij.openapi.vfs.VirtualFile?, suggested) ?: return
+        try {
+            target.file.writeText(TranscriptExporter.toMarkdown(session))
+            statusLabel.text = "exported ${target.file.name}"
+        } catch (e: Exception) {
+            Messages.showErrorDialog(project, "Could not write the file: ${e.message}", "Claude Brains")
+        }
     }
 
     private fun chooseImage() {
@@ -262,10 +300,8 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private fun updateAnalyticsLabel() {
         val parts = mutableListOf<String>()
         if (session.turnCount > 0) {
-            parts += "$%.4f".format(session.totalCostUsd)
-            parts += "%s in / %s out".format(
-                formatTokens(session.totalInputTokens), formatTokens(session.totalOutputTokens)
-            )
+            parts += "$" + fmt("%.4f", session.totalCostUsd)
+            parts += "${formatTokens(session.totalInputTokens)} in / ${formatTokens(session.totalOutputTokens)} out"
         }
         session.rateLimit?.let { rl ->
             rl.resetsAtEpochSec?.let { parts += "resets " + formatCountdown(it) }
@@ -277,9 +313,13 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         }
     }
 
+    /** Number formatting pinned to Locale.ROOT so figures don't shift with the IDE locale. */
+    private fun fmt(pattern: String, vararg args: Any): String =
+        String.format(java.util.Locale.ROOT, pattern, *args)
+
     private fun formatTokens(n: Long): String = when {
-        n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)
-        n >= 1_000 -> "%.1fk".format(n / 1_000.0)
+        n >= 1_000_000 -> fmt("%.1fM", n / 1_000_000.0)
+        n >= 1_000 -> fmt("%.1fk", n / 1_000.0)
         else -> n.toString()
     }
 
@@ -336,7 +376,8 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private fun analyticsSummary(): String = if (session.turnCount == 0) {
         "No usage yet in this session."
     } else {
-        "**Session usage** — %d turns · $%.4f · %d input / %d output tokens".format(
+        fmt(
+            "**Session usage** — %d turns · $%.4f · %d input / %d output tokens",
             session.turnCount, session.totalCostUsd, session.totalInputTokens, session.totalOutputTokens
         )
     }
@@ -395,11 +436,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 }
             }
 
-            override fun onToolResult(toolUseId: String?, isError: Boolean) {
+            override fun onToolResult(toolUseId: String?, isError: Boolean, output: String?) {
                 ApplicationManager.getApplication().invokeLater {
                     val tc = assistantMessage.toolCalls.lastOrNull { it.id == toolUseId }
                         ?: assistantMessage.toolCalls.lastOrNull { it.status == ToolCall.Status.RUNNING }
                     tc?.status = if (isError) ToolCall.Status.ERROR else ToolCall.Status.OK
+                    tc?.output = output
                     repaint()
                 }
             }

@@ -83,7 +83,7 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         /** A tool Claude invoked this turn, already summarised for display (e.g. "Read foo.kt"). */
         fun onToolUse(id: String?, display: String) {}
         /** The result of a previously reported tool call, correlated by its [toolUseId]. */
-        fun onToolResult(toolUseId: String?, isError: Boolean) {}
+        fun onToolResult(toolUseId: String?, isError: Boolean, output: String?) {}
         /** A file-mutating tool call (Edit/MultiEdit/Write), for diff review. */
         fun onFileEdit(edit: FileEdit) {}
         fun onRateLimit(rateLimit: ClaudeSession.RateLimit) {}
@@ -280,7 +280,11 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
                     val block = el.asJsonObject
                     if (block.get("type")?.asString == "tool_result") {
                         val isError = block.get("is_error")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-                        listener.onToolResult(block.get("tool_use_id")?.asString, isError)
+                        listener.onToolResult(
+                            block.get("tool_use_id")?.asString,
+                            isError,
+                            extractToolResultText(block.get("content"))
+                        )
                     }
                 }
             }
@@ -323,6 +327,33 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
             }
         }
         return null
+    }
+
+    /**
+     * Pulls display text out of a `tool_result.content`, which is either a plain
+     * string or an array of blocks (text, images, ...). Long output is clamped —
+     * this is a preview in a chat bubble, not a terminal.
+     */
+    internal fun extractToolResultText(content: com.google.gson.JsonElement?): String? {
+        val raw = when {
+            content == null -> null
+            content.isJsonPrimitive -> content.asString
+            content.isJsonArray -> content.asJsonArray.mapNotNull { el ->
+                val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+                when (o.get("type")?.asString) {
+                    "text" -> o.get("text")?.takeIf { it.isJsonPrimitive }?.asString
+                    "image" -> "[image]"
+                    else -> null
+                }
+            }.joinToString("\n").ifBlank { null }
+            else -> null
+        }
+        val trimmed = raw?.trim()?.ifEmpty { null } ?: return null
+        return if (trimmed.length > MAX_TOOL_OUTPUT) {
+            trimmed.take(MAX_TOOL_OUTPUT) + "\n… (truncated)"
+        } else {
+            trimmed
+        }
     }
 
     /** Parses a file-mutating tool_use (Edit/MultiEdit/Write) into a [FileEdit], else null. */
@@ -427,5 +458,8 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
          * stderr — the result event itself carries no explanatory text).
          */
         internal val STALE_SESSION = Regex("No conversation found with session ID", RegexOption.IGNORE_CASE)
+
+        /** Tool output beyond this is clamped before it reaches the chat. */
+        internal const val MAX_TOOL_OUTPUT = 2000
     }
 }

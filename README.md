@@ -16,7 +16,9 @@ login your `claude` CLI already has (your Claude Code subscription).
 - **Persistent sessions** — conversations, their `--resume` context, model
   choice and usage totals survive an IDE restart (stored per project)
 - **Tool-activity view** — the files Claude reads/edits and commands it runs
-  show up live in the chat with result status (`🔧` running, `✓` ok, `✗` failed)
+  show up live with result status (`🔧` running, `✓` ok, `✗` failed) and their
+  **output collapsed underneath** (failures open by default)
+- **Collapsible reasoning**, and **copy / export** the conversation as Markdown
 - **Native slash commands** — `/clear`, `/cost`, `/model`, `/help` work in-panel;
   interactive-only CLI commands get an honest "not available here" note instead
   of being silently sent as prompt text
@@ -138,6 +140,7 @@ src/test/kotlin/.../ui/MessageRendererTest.kt    # rendered fragments + diff/rev
     MessageRenderer.kt         # message -> HTML fragment (answer, thinking, tools, edit links)
     ProjectFileSearch.kt       # cached project-file index behind the `@` autocomplete
     ImageAttachments.kt        # clipboard screenshot -> temp PNG for path-based image input
+    TranscriptExporter.kt      # conversation -> Markdown (copy / export)
     DiffReviewer.kt            # opens IntelliJ's diff viewer; reverts an edit
     ClaudeBrainsConfigurable.kt # Settings > Tools > Claude Brains page
     SlashCommands.kt           # autocomplete list
