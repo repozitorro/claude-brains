@@ -6,6 +6,8 @@
 /* highlight.js theme (injected at runtime) */
 __HLJS_THEME__
 
+/* Neutrals, font family and size all come from the running IDE theme, so the
+   panel reads as part of the IDE rather than a web page embedded in one. */
 :root {
   --bg: __BG__;
   --fg: __FG__;
@@ -13,45 +15,218 @@ __HLJS_THEME__
   --user-bg: __USER_BG__;
   --border: __BORDER__;
   --accent: __ACCENT__;
+  --ok: #5D9E63;
+  --err: #C15B5B;
+
+  --ui: __FONT__, -apple-system, system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  --size: __FONTSIZE__px;
+
+  --gap: 18px;
+  --radius: 6px;
 }
+
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
-  font-family: __FONT__, sans-serif; font-size: __FONTSIZE__px; }
-#chat { padding: 8px 10px 24px; }
-.msg { margin: 10px 0; }
-.msg .role { font-size: 10px; font-weight: bold; opacity: .55; margin-bottom: 3px; }
-.msg.user .body { background: var(--user-bg); border-radius: 6px; padding: 6px 10px; }
-.msg .body { line-height: 1.45; word-wrap: break-word; }
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--fg);
+  font-family: var(--ui); font-size: var(--size);
+  -webkit-font-smoothing: antialiased;
+}
+
+#chat { padding: 14px 14px 28px; display: flex; flex-direction: column; gap: var(--gap); }
+
+/* ---------- Empty state ---------- */
+#empty { padding: 28px 6px; color: var(--muted); }
+#empty h1 { font-size: calc(var(--size) + 1px); font-weight: 600; color: var(--fg); margin: 0 0 4px; }
+#empty p { margin: 0 0 16px; line-height: 1.5; }
+#empty dl { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; margin: 0; align-items: baseline; }
+#empty dt { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+#empty dd { margin: 0; }
+
+/* ---------- Messages ---------- */
+.msg { display: flex; flex-direction: column; gap: 5px; }
+.msg .role {
+  font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted);
+}
+.msg .body { line-height: 1.55; word-wrap: break-word; overflow-wrap: anywhere; }
 .msg .body > *:first-child { margin-top: 0; }
 .msg .body > *:last-child { margin-bottom: 0; }
-.msg .body p { margin: 6px 0; }
-.msg .body ul, .msg .body ol { margin: 6px 0; padding-left: 22px; }
-.msg .body code { font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px;
-  background: var(--border); padding: 1px 4px; border-radius: 3px; }
-.msg .body pre { position: relative; border-radius: 6px; padding: 10px 10px 8px; overflow-x: auto;
-  border: 1px solid var(--border); }
-.msg .body pre code { background: none; padding: 0; }
-.msg .body a { color: var(--accent); cursor: pointer; text-decoration: none; }
-.msg .body a:hover { text-decoration: underline; }
-.copy-btn { position: absolute; top: 6px; right: 6px; font-size: 10px; padding: 2px 7px;
-  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
-  cursor: pointer; opacity: 0; transition: opacity .12s; }
-.msg .body pre:hover .copy-btn { opacity: .85; }
-.copy-btn:hover { opacity: 1 !important; }
+.msg .body p { margin: 8px 0; }
+.msg .body ul, .msg .body ol { margin: 8px 0; padding-left: 20px; }
+.msg .body li { margin: 3px 0; }
+.msg .body h1, .msg .body h2, .msg .body h3 {
+  font-size: calc(var(--size) + 1px); font-weight: 600; margin: 14px 0 6px; text-wrap: balance;
+}
+.msg .body a { color: var(--accent); }
+
+/* Your own turn is the quieter one: a tinted block with an accent rail, so
+   Claude's answers keep the full width and the eye lands on them first. */
+.msg.user .body {
+  background: var(--user-bg);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 8px 11px;
+  white-space: pre-wrap;
+}
+.msg.system .body {
+  border-left: 2px solid var(--border);
+  padding: 2px 11px;
+  color: var(--muted);
+  font-size: calc(var(--size) - 1px);
+}
+
+/* ---------- Reasoning ---------- */
+.cb-think { margin-bottom: 4px; }
+.cb-think > summary {
+  cursor: pointer; list-style: none; color: var(--muted);
+  font-size: 11px; letter-spacing: .04em; display: inline-flex; align-items: center; gap: 5px;
+}
+.cb-think > summary::-webkit-details-marker { display: none; }
+.cb-think > summary::before {
+  content: ''; width: 0; height: 0;
+  border-left: 4px solid currentColor; border-top: 3px solid transparent; border-bottom: 3px solid transparent;
+  transition: transform .12s ease;
+}
+.cb-think[open] > summary::before { transform: rotate(90deg); }
+.cb-think .cb-think-body {
+  margin-top: 6px; padding-left: 10px; border-left: 1px solid var(--border);
+  color: var(--muted); font-style: italic; white-space: pre-wrap; line-height: 1.5;
+}
+
+/* ---------- Tool activity ---------- */
+.cb-activity { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cb-act { font-family: var(--mono); font-size: 11px; }
+.cb-act summary, .cb-act .cb-act-row {
+  display: flex; align-items: baseline; gap: 7px; padding: 2px 0;
+  list-style: none; cursor: default;
+}
+.cb-act details > summary { cursor: pointer; }
+.cb-act summary::-webkit-details-marker { display: none; }
+
+/* Status lives in the dot's colour, not in an emoji glyph. */
+.cb-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transform: translateY(-1px); }
+.cb-act[data-status='ok']    .cb-dot { background: var(--ok); }
+.cb-act[data-status='error'] .cb-dot { background: var(--err); }
+.cb-act[data-status='running'] .cb-dot { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+.cb-act[data-status='error'] .cb-act-label { color: var(--err); }
+.cb-act-label { color: var(--muted); }
+.cb-act[data-status='ok'] .cb-act-label { color: var(--fg); opacity: .8; }
+
+.cb-out {
+  margin: 3px 0 6px 13px; padding: 7px 9px;
+  background: var(--user-bg); border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: var(--mono); font-size: 11px; line-height: 1.45;
+  white-space: pre-wrap; overflow-x: auto; max-height: 260px;
+}
+
+/* ---------- File edits ---------- */
+.cb-edits { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cb-edit {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 11px;
+}
+.cb-edit .cb-file { color: var(--fg); opacity: .85; }
+.cb-edit .cb-file b { font-weight: 600; color: var(--accent); }
+/* Anchors, not buttons: the Swing fallback view drives these through
+   HyperlinkListener, so they must stay real links. */
+a.cb-btn {
+  font-family: var(--ui); font-size: 11px; line-height: 1;
+  padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--muted); text-decoration: none; cursor: pointer;
+}
+a.cb-btn:hover { color: var(--fg); border-color: var(--muted); }
+a.cb-btn.danger:hover { color: var(--err); border-color: var(--err); }
+
+/* ---------- Code ---------- */
+.msg .body code {
+  font-family: var(--mono); font-size: calc(var(--size) - 1px);
+  background: var(--user-bg); padding: 1px 4px; border-radius: 3px;
+}
+.cb-code { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin: 10px 0; }
+.cb-code-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 8px; background: var(--user-bg); border-bottom: 1px solid var(--border);
+}
+.cb-lang { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.cb-copy {
+  font: inherit; font-size: 10px; padding: 2px 7px; cursor: pointer;
+  background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 4px;
+}
+.cb-copy:hover { color: var(--fg); border-color: var(--muted); }
+.msg .body pre { margin: 0; padding: 10px; overflow-x: auto; background: transparent; }
+.msg .body pre code { background: none; padding: 0; font-size: 12px; line-height: 1.5; }
+
+/* ---------- Streaming caret ---------- */
+.cb-caret {
+  display: inline-block; width: 6px; height: 1em; background: var(--accent);
+  vertical-align: text-bottom; opacity: .8; animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ---------- Jump to latest ---------- */
+#jump {
+  position: fixed; right: 14px; bottom: 14px; display: none;
+  font: inherit; font-size: 11px; padding: 5px 10px; cursor: pointer;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.28);
+}
+#jump.show { display: block; }
+#jump:hover { border-color: var(--accent); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { animation: none !important; transition: none !important; }
+}
 </style>
 </head>
 <body>
-<div id="chat"></div>
+<div id="chat">
+  <div id="empty">
+    <h1>Claude Brains</h1>
+    <p>Ask about the code in this project — Claude reads and edits the files itself.</p>
+    <dl>
+      <dt>/</dt><dd>commands, like <code>/cost</code> or <code>/clear</code></dd>
+      <dt>@</dt><dd>reference a project file by path</dd>
+      <dt>⌘V</dt><dd>paste a screenshot straight into the prompt</dd>
+    </dl>
+  </div>
+</div>
+<button id="jump" type="button">Jump to latest ↓</button>
+
 <script>
 __HLJS_JS__
 </script>
 <script>
 (function () {
   var chat = document.getElementById('chat');
+  var empty = document.getElementById('empty');
+  var jump = document.getElementById('jump');
 
   function b64d(s) { return decodeURIComponent(escape(window.atob(s))); }
 
-  function scrollBottom() { window.scrollTo(0, document.body.scrollHeight); }
+  // Follow the stream only while the reader is already at the bottom; if they
+  // scrolled up to read something, leave them there and offer a way back.
+  var PINNED_SLACK = 60;
+  function atBottom() {
+    return (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - PINNED_SLACK);
+  }
+  var pinned = true;
+  window.addEventListener('scroll', function () {
+    pinned = atBottom();
+    jump.classList.toggle('show', !pinned);
+  });
+  jump.addEventListener('click', function () {
+    window.scrollTo(0, document.body.scrollHeight);
+    pinned = true;
+    jump.classList.remove('show');
+  });
+  function follow() { if (pinned) window.scrollTo(0, document.body.scrollHeight); }
 
   // Bridge to Kotlin for diff/revert link clicks. Replaced at runtime.
   window.cbLink = function (payload) { __QUERY_INJECT__ };
@@ -60,20 +235,36 @@ __HLJS_JS__
     body.querySelectorAll('pre code').forEach(function (block) {
       try { window.hljs.highlightElement(block); } catch (e) {}
       var pre = block.parentElement;
-      if (pre && !pre.querySelector('.copy-btn')) {
-        var btn = document.createElement('button');
-        btn.className = 'copy-btn';
-        btn.textContent = 'Copy';
-        btn.addEventListener('click', function () {
-          var text = block.innerText;
-          navigator.clipboard.writeText(text).then(function () {
-            btn.textContent = 'Copied';
-            setTimeout(function () { btn.textContent = 'Copy'; }, 1200);
-          }).catch(function () {});
-        });
-        pre.appendChild(btn);
-      }
+      if (!pre || pre.parentElement.classList.contains('cb-code')) return;
+
+      var lang = (block.className.match(/language-([\w-]+)/) || [])[1]
+        || (block.className.match(/\bhljs\s+(\w+)/) || [])[1] || 'code';
+
+      var wrap = document.createElement('div');
+      wrap.className = 'cb-code';
+      var head = document.createElement('div');
+      head.className = 'cb-code-head';
+      var name = document.createElement('span');
+      name.className = 'cb-lang';
+      name.textContent = lang;
+      var btn = document.createElement('button');
+      btn.className = 'cb-copy';
+      btn.type = 'button';
+      btn.textContent = 'Copy';
+      btn.addEventListener('click', function () {
+        navigator.clipboard.writeText(block.innerText).then(function () {
+          btn.textContent = 'Copied';
+          setTimeout(function () { btn.textContent = 'Copy'; }, 1200);
+        }).catch(function () {});
+      });
+      head.appendChild(name);
+      head.appendChild(btn);
+
+      pre.parentElement.insertBefore(wrap, pre);
+      wrap.appendChild(head);
+      wrap.appendChild(pre);
     });
+
     body.querySelectorAll('a[data-cb]').forEach(function (a) {
       if (a.__cbWired) return;
       a.__cbWired = true;
@@ -84,9 +275,15 @@ __HLJS_JS__
     });
   }
 
-  window.cbClear = function () { chat.innerHTML = ''; };
+  window.cbClear = function () {
+    chat.innerHTML = '';
+    chat.appendChild(empty);
+    empty.style.display = '';
+  };
 
   window.cbRender = function (index, role, htmlB64, streaming) {
+    empty.style.display = 'none';
+
     var id = 'msg-' + index;
     var el = document.getElementById(id);
     if (!el) {
@@ -102,10 +299,10 @@ __HLJS_JS__
       el.appendChild(body);
       chat.appendChild(el);
     }
-    var body = el.querySelector('.body');
-    body.innerHTML = b64d(htmlB64);
-    if (!streaming) { enhance(body); }
-    scrollBottom();
+    var target = el.querySelector('.body');
+    target.innerHTML = b64d(htmlB64);
+    if (!streaming) { enhance(target); }
+    follow();
   };
 })();
 </script>

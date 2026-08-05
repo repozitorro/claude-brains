@@ -79,6 +79,11 @@
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift C"/>
         </action>
 
+        <action id="ClaudeCodeChat.UsageStats"
+                class="com.claudecode.chatplugin.actions.ShowUsageStatsAction"
+                text="Claude Brains: Usage Statistics"
+                description="Token usage by project, branch and model"/>
+
         <action id="ClaudeCodeChat.NewSession"
                 class="com.claudecode.chatplugin.actions.NewSessionAction"
                 text="Claude Code: New Chat Session"

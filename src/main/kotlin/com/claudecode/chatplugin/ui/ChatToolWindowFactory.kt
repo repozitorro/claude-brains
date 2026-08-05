@@ -48,9 +48,11 @@ class ChatToolWindowFactory : ToolWindowFactory {
 
         // Toolbar "+" action to start a new parallel session tab.
         toolWindow.setTitleActions(
-            listOf(
+            listOfNotNull(
                 com.intellij.openapi.actionSystem.ActionManager.getInstance()
-                    .getAction("ClaudeCodeChat.NewSession")
+                    .getAction("ClaudeCodeChat.NewSession"),
+                com.intellij.openapi.actionSystem.ActionManager.getInstance()
+                    .getAction("ClaudeCodeChat.UsageStats")
             )
         )
 

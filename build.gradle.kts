@@ -40,6 +40,12 @@ tasks {
         kotlinOptions.jvmTarget = "17"
     }
 
+    test {
+        // Gradle sets -D on its own JVM, not the test JVM; forward the opt-in flag
+        // used by the statistics preview harness.
+        System.getProperty("claudebrains.preview")?.let { systemProperty("claudebrains.preview", it) }
+    }
+
     patchPluginXml {
         sinceBuild.set("241")
         // No upper bound: an explicit untilBuild makes the IDE refuse to install

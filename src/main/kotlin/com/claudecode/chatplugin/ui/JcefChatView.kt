@@ -102,7 +102,8 @@ class JcefChatView(parent: Disposable, private val onLink: (String) -> Unit) : C
             .replace("__MUTED__", hex(UIUtil.getInactiveTextColor()))
             .replace("__USER_BG__", hex(blend(UIUtil.getPanelBackground(), UIUtil.getLabelForeground(), 0.08)))
             .replace("__BORDER__", hex(blend(UIUtil.getPanelBackground(), UIUtil.getLabelForeground(), 0.20)))
-            .replace("__ACCENT__", if (dark) "#499bd6" else "#2b6cb0")
+            // Claude's own clay tone, lightened on dark grounds so it stays legible.
+            .replace("__ACCENT__", if (dark) "#E08B68" else "#C4643F")
             .replace("__FONT__", "'${font.family}'")
             .replace("__FONTSIZE__", font.size.toString())
     }

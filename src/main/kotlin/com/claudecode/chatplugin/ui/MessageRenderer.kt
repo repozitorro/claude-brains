@@ -36,37 +36,42 @@ object MessageRenderer {
         .replace("\n", "<br/>")
 
     /**
-     * Reasoning, collapsed by default. `<details>` is native in the JCEF view;
-     * the Swing fallback's HTML 3.2 engine ignores the tag and simply shows the
-     * content, which is an acceptable degradation.
+     * Reasoning, collapsed once it has finished streaming. `<details>` is native
+     * in the JCEF view; the Swing fallback's HTML 3.2 engine ignores the tag and
+     * simply shows the content, which is an acceptable degradation.
      */
     private fun thinkingBlock(inner: String, streaming: Boolean): String =
-        "<details${if (streaming) " open" else ""} style='margin-bottom:6px;'>" +
-            "<summary style='color:#888888; font-size:11px; cursor:pointer;'>Reasoning</summary>" +
-            "<div style='color:#888888; font-style:italic; border-left:2px solid #666666; " +
-            "padding-left:8px; white-space:pre-wrap;'>$inner</div></details>"
+        "<details class='cb-think'${if (streaming) " open" else ""}>" +
+            "<summary>Reasoning</summary>" +
+            "<div class='cb-think-body'>$inner</div></details>"
 
+    /**
+     * The activity strip. Status is carried as a `data-status` attribute and
+     * painted as a coloured dot by the stylesheet, rather than spelled out in
+     * emoji — it reads faster and stays consistent with the IDE's own chrome.
+     */
     private fun toolCallsBlock(calls: List<ToolCall>): String {
         if (calls.isEmpty()) return ""
         val rows = calls.joinToString("") { tc ->
-            val (glyph, color) = when (tc.status) {
-                ToolCall.Status.OK -> "&#10003;" to "#7a9a7a"       // ✓
-                ToolCall.Status.ERROR -> "&#10007;" to "#c86a6a"    // ✗
-                ToolCall.Status.RUNNING -> "&#128295;" to "#7a9a7a" // 🔧
+            val status = when (tc.status) {
+                ToolCall.Status.OK -> "ok"
+                ToolCall.Status.ERROR -> "error"
+                ToolCall.Status.RUNNING -> "running"
             }
-            val label = "<span style='color:$color;'>$glyph " + escape(tc.display) + "</span>"
+            val label = "<span class='cb-dot'></span><span class='cb-act-label'>" +
+                escape(tc.display) + "</span>"
             val output = tc.output
-            if (output.isNullOrBlank()) {
-                "<div>$label</div>"
+            val inner = if (output.isNullOrBlank()) {
+                "<div class='cb-act-row'>$label</div>"
             } else {
-                // Failures open by default — that's the output you actually need.
+                // Failures open by default — that output is the reason you're looking.
                 val open = if (tc.status == ToolCall.Status.ERROR) " open" else ""
-                "<details$open><summary style='cursor:pointer; list-style:none;'>$label</summary>" +
-                    "<pre style='margin:2px 0 6px 14px; font-size:11px; white-space:pre-wrap;'>" +
-                    escapeKeepNewlines(output) + "</pre></details>"
+                "<details$open><summary>$label</summary>" +
+                    "<pre class='cb-out'>" + escapeKeepNewlines(output) + "</pre></details>"
             }
+            "<li class='cb-act' data-status='$status'>$inner</li>"
         }
-        return "<div style='font-family:monospace; font-size:11px; margin:4px 0;'>$rows</div>"
+        return "<ul class='cb-activity'>$rows</ul>"
     }
 
     /** Escapes for display inside `<pre>`, where real newlines already break lines. */
@@ -79,23 +84,27 @@ object MessageRenderer {
         if (edits.isEmpty()) return ""
         val rows = StringBuilder()
         edits.forEachIndexed { i, e ->
-            if (i > 0) rows.append("<br/>")
-            rows.append("&#9999; ").append(escape(e.toolName)).append(" ").append(escape(e.fileName)) // ✏
+            rows.append("<li class='cb-edit'><span class='cb-file'>")
+                .append(escape(e.toolName)).append(" <b>").append(escape(e.fileName)).append("</b></span>")
             if (withLinks && e.isResolved) {
                 rows.append(link(msgIndex, "diff", i, "diff"))
-                if (e.canRevert) rows.append(link(msgIndex, "revert", i, "revert"))
+                if (e.canRevert) rows.append(link(msgIndex, "revert", i, "revert", danger = true))
             }
+            rows.append("</li>")
         }
         // One-click undo for the whole turn, once more than one edit is revertible.
         if (withLinks && edits.count { it.isResolved && it.canRevert } > 1) {
-            rows.append("<br/>").append(link(msgIndex, "revertall", -1, "revert all"))
+            rows.append("<li class='cb-edit'>")
+                .append(link(msgIndex, "revertall", -1, "revert all", danger = true))
+                .append("</li>")
         }
-        return "<div style='color:#c8a45c; font-family:monospace; font-size:11px; margin:4px 0;'>$rows</div>"
+        return "<ul class='cb-edits'>$rows</ul>"
     }
 
-    private fun link(msgIndex: Int, action: String, editIndex: Int, text: String): String {
+    private fun link(msgIndex: Int, action: String, editIndex: Int, text: String, danger: Boolean = false): String {
         val token = "claudebrains:$msgIndex:$action:$editIndex"
-        return " &nbsp;<a href='$token' data-cb='$token'>$text</a>"
+        val cls = if (danger) "cb-btn danger" else "cb-btn"
+        return "<a class='$cls' href='$token' data-cb='$token'>$text</a>"
     }
 
     /** Inner-HTML fragment for [message] (no `<html>` wrapper). */
@@ -113,23 +122,32 @@ object MessageRenderer {
         body.append(editsBlock(message.edits, msgIndex, withLinks = !streaming))
         if (streaming) {
             body.append(escape(message.text))
-            body.append("<span style='opacity:0.5;'>&#9611;</span>")
+            body.append("<span class='cb-caret'>&#9611;</span>")
         } else {
             body.append(md(message.text.ifEmpty { " " }))
         }
         return body.toString()
     }
 
-    /** Wraps a [fragment] in a full `<html>` page for the Swing `JEditorPane` fallback. */
+    /**
+     * Wraps a [fragment] in a full `<html>` page for the Swing `JEditorPane`
+     * fallback. Swing's HTML 3.2 engine supports only a fraction of the
+     * stylesheet the JCEF view uses, so this restates the few rules it can
+     * honour — the layout degrades, but stays readable.
+     */
     fun page(fragment: String): String = """
         <html>
         <head>
         <style>
             body { font-family: sans-serif; font-size: 12px; }
-            pre { background: #2b2b2b; color: #e0e0e0; padding: 6px; border-radius: 4px; }
+            pre { background: #2b2b2b; color: #e0e0e0; padding: 6px; }
             code { font-family: monospace; }
             p { margin: 4px 0; }
-            a { color: #499bd6; }
+            a { color: #CC785C; }
+            ul.cb-activity, ul.cb-edits { margin: 4px 0; }
+            li.cb-act, li.cb-edit { font-family: monospace; font-size: 11px; }
+            .cb-think-body { color: #888888; font-style: italic; }
+            .cb-out { font-family: monospace; font-size: 11px; }
         </style>
         </head>
         <body>$fragment</body>

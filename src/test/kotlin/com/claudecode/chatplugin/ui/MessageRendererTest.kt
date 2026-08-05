@@ -79,8 +79,38 @@ class MessageRendererTest {
         ))
         val html = MessageRenderer.fragment(msg, 0, streaming = false)
 
-        assertTrue(html.contains("&#10007;"))              // ✗ for ERROR
+        // Status is an attribute the stylesheet paints, not a glyph in the text.
+        assertTrue(html.contains("data-status='error'"))
         assertTrue(html.contains("&lt;script&gt;"))        // escaped, not raw HTML
         assertFalse(html.contains("<script>"))
+    }
+
+    @Test
+    fun `tool output is rendered collapsed, and expanded when it failed`() {
+        val ok = ChatMessage(Role.ASSISTANT, "", toolCalls = mutableListOf(
+            ToolCall("1", "Bash npm test", ToolCall.Status.OK, output = "3 passing")
+        ))
+        val failed = ChatMessage(Role.ASSISTANT, "", toolCalls = mutableListOf(
+            ToolCall("1", "Bash npm test", ToolCall.Status.ERROR, output = "1 failing")
+        ))
+
+        val okHtml = MessageRenderer.fragment(ok, 0, streaming = false)
+        val failedHtml = MessageRenderer.fragment(failed, 0, streaming = false)
+
+        assertTrue(okHtml.contains("<details><summary>"))     // collapsed
+        assertTrue(okHtml.contains("3 passing"))
+        assertTrue(failedHtml.contains("<details open>"))     // failures start open
+    }
+
+    @Test
+    fun `a call without output renders no disclosure`() {
+        val msg = ChatMessage(Role.ASSISTANT, "", toolCalls = mutableListOf(
+            ToolCall("1", "Read foo.kt", ToolCall.Status.RUNNING)
+        ))
+        val html = MessageRenderer.fragment(msg, 0, streaming = false)
+
+        assertTrue(html.contains("data-status='running'"))
+        assertTrue(html.contains("cb-act-row"))
+        assertFalse(html.contains("<details"))
     }
 }

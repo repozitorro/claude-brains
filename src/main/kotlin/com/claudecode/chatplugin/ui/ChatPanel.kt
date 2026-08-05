@@ -7,6 +7,7 @@ import com.claudecode.chatplugin.model.ClaudeSession
 import com.claudecode.chatplugin.model.FileEdit
 import com.claudecode.chatplugin.model.Role
 import com.claudecode.chatplugin.model.ToolCall
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
@@ -86,25 +87,29 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         addActionListener { onSendOrStop() }
     }
 
-    private val attachButton = JButton("🖼").apply {
-        toolTipText = "Attach an image (or just paste a screenshot into the prompt)"
-        addActionListener { chooseImage() }
-    }
+    /** Compact icon-only button, styled like the IDE's own toolbar controls. */
+    private fun iconButton(icon: javax.swing.Icon, tooltip: String, action: () -> Unit) =
+        JButton(icon).apply {
+            toolTipText = tooltip
+            isFocusable = false
+            putClientProperty("JButton.buttonType", "toolBarButton")
+            margin = JBUI.insets(2)
+            addActionListener { action() }
+        }
+
+    private val attachButton = iconButton(
+        AllIcons.FileTypes.Image, "Attach an image (or paste a screenshot into the prompt)"
+    ) { chooseImage() }
 
     init {
         preferredSize = Dimension(420, 600)
 
         val transcriptButtons = JPanel(BorderLayout()).apply {
             add(statusLabel, BorderLayout.CENTER)
-            add(JPanel().apply {
-                add(JButton("📋").apply {
-                    toolTipText = "Copy the conversation as Markdown"
-                    addActionListener { copyTranscript() }
-                })
-                add(JButton("💾").apply {
-                    toolTipText = "Export the conversation to a Markdown file"
-                    addActionListener { exportTranscript() }
-                })
+            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0)).apply {
+                isOpaque = false
+                add(iconButton(AllIcons.Actions.Copy, "Copy the conversation as Markdown") { copyTranscript() })
+                add(iconButton(AllIcons.ToolbarDecorator.Export, "Export the conversation to a Markdown file") { exportTranscript() })
             }, BorderLayout.EAST)
         }
 
