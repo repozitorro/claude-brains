@@ -1,7 +1,7 @@
 <plugins>
   <plugin id="io.github.repozitorro.claudebrains"
-          url="https://github.com/repozitorro/claude-brains/releases/download/v0.1.0/claude-brains-0.1.0.zip"
-          version="0.1.0">
+          url="https://github.com/repozitorro/claude-brains/releases/download/v0.2.0/claude-brains-0.2.0.zip"
+          version="0.2.0">
     <name>Claude Brains</name>
     <description>Chat UI for the Claude Code CLI inside JetBrains IDEs.</description>
     <idea-version since-build="241"/>
