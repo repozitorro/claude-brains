@@ -23,6 +23,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.2.0</b>
+        <ul>
+            <li><b>Usage statistics</b> — token usage by project, git branch, model
+                and day, read from the CLI's own session transcripts, plus usage
+                since the current rate-limit window opened</li>
+            <li>Redesigned chat panel: colours and font taken from the IDE theme,
+                status dots instead of emoji, code blocks with a language header
+                and copy button, collapsible tool output, and auto-scroll that
+                stops following once you scroll up to read</li>
+        </ul>
+
         <b>0.1.0</b>
         <ul>
             <li>Streaming chat with reasoning, rendered in an embedded browser
