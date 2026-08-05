@@ -27,6 +27,11 @@
         <ul>
             <li>Fixes the tool window opening empty ("Nothing to show") in 0.3.1:
                 building the panel threw before any tab was added</li>
+            <li><b>Sign-in screen</b> when the Claude Code CLI isn't signed in,
+                instead of a chat that fails on the first prompt. Signing in runs
+                the CLI's own <code>auth login</code> in a terminal — no
+                credentials are entered into the plugin. A missing CLI gets its
+                own message and install hint.</li>
         </ul>
 
         <b>0.3.1</b>
