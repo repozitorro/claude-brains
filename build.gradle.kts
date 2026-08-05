@@ -41,6 +41,9 @@ tasks {
     }
 
     test {
+        // CI runners have no display; run tests the same way locally so a headless
+        // failure can't hide until it reaches CI.
+        systemProperty("java.awt.headless", "true")
         // Gradle sets -D on its own JVM, not the test JVM; forward the opt-in flag
         // used by the statistics preview harness.
         System.getProperty("claudebrains.preview")?.let { systemProperty("claudebrains.preview", it) }

@@ -211,7 +211,15 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
      * Text pastes fall through to the normal editor behaviour.
      */
     private fun installImagePaste() {
-        val pasteKey = KeyStroke.getKeyStroke(KeyEvent.VK_V, java.awt.Toolkit.getDefaultToolkit().menuShortcutKeyMaskEx)
+        // Which modifier means "paste" is a platform fact, so read it from
+        // SystemInfo rather than Toolkit — asking Toolkit for it throws
+        // HeadlessException, which made the whole panel unbuildable in tests.
+        val modifier = if (com.intellij.openapi.util.SystemInfo.isMac) {
+            java.awt.event.InputEvent.META_DOWN_MASK
+        } else {
+            java.awt.event.InputEvent.CTRL_DOWN_MASK
+        }
+        val pasteKey = KeyStroke.getKeyStroke(KeyEvent.VK_V, modifier)
         val actionKey = "claudeBrainsPasteImage"
         val fallback = inputArea.getActionForKeyStroke(pasteKey)
         inputArea.inputMap.put(pasteKey, actionKey)
