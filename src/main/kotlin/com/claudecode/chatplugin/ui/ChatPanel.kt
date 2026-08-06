@@ -12,7 +12,7 @@ import com.claudecode.chatplugin.model.ToolCall
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileChooser.FileChooser
-import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
+import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.fileChooser.FileChooserFactory
 import com.intellij.openapi.fileChooser.FileSaverDescriptor
 import com.intellij.openapi.ide.CopyPasteManager
@@ -453,6 +453,13 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     private fun exportTranscript() {
+        // Deprecated from 2025 on, and knowingly kept: 2024.1 ships no other
+        // constructor for this at all (checked against the SDK, not from
+        // memory), and that is the floor sinceBuild promises. Reaching for the
+        // newer one would compile here and throw NoSuchMethodError there —
+        // exactly the failure the plugin verifier exists to prevent. Replace it
+        // when the floor moves past 2024.x, not before.
+        @Suppress("DEPRECATION")
         val descriptor = FileSaverDescriptor("Export Conversation", "Save the transcript as Markdown", "md")
         val suggested = session.displayName.replace(Regex("[^A-Za-z0-9._-]"), "-") + ".md"
         val target = FileChooserFactory.getInstance()
@@ -502,7 +509,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     private fun chooseImage() {
-        val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor()
+        // The factory's createSingleFileDescriptor() is what this used to call;
+        // it is deprecated from 2025 on, and its replacement does not exist in
+        // 2024.1, which is the floor this still supports. The constructor it
+        // delegated to is available and current in both: one file, no folders,
+        // no jars, no multiselect.
+        val descriptor = FileChooserDescriptor(true, false, false, false, false, false)
             .withFileFilter { it.extension?.lowercase() in IMAGE_EXTENSIONS }
             .apply { title = "Attach Image" }
         val chosen = FileChooser.chooseFile(descriptor, project, null) ?: return
