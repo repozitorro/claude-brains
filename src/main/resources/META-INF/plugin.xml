@@ -23,6 +23,15 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.4.5</b>
+        <ul>
+            <li><b>Fixes the panel coming up empty on WebStorm 2026.2</b>, where the
+                embedded browser moved into its own bundled plugin: touching it
+                threw, and that took the whole tool window with it. The dependency
+                is declared now, and a missing browser costs only the rich
+                renderer — the chat falls back to its Swing view.</li>
+        </ul>
+
         <b>0.4.4</b>
         <ul>
             <li><b>Accept / Reject sit next to the change</b> they belong to, instead
