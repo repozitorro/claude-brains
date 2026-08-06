@@ -1,6 +1,7 @@
 package com.claudecode.chatplugin.stats
 
 import com.claudecode.chatplugin.ClaudeSessionManager
+import com.claudecode.chatplugin.ui.JcefSupport
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
@@ -9,7 +10,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
@@ -26,31 +26,42 @@ import javax.swing.JEditorPane
 class UsageStatsDialog(private val project: Project, private val html: String) :
     DialogWrapper(project, true) {
 
-    private var browser: JBCefBrowser? = null
-
     init {
         title = "Claude Brains — Usage Statistics"
         init()
     }
 
     override fun createCenterPanel(): JComponent {
-        val size = Dimension(940, 720)
-        return if (JBCefApp.isSupported()) {
-            val b = JBCefBrowser()
-            Disposer.register(disposable, b)
-            browser = b
-            b.loadHTML(html)
-            b.component.apply { preferredSize = size }
-        } else {
-            JBScrollPane(
-                JEditorPane("text/html", html).apply { isEditable = false }
-            ).apply { preferredSize = size }
-        }
+        val browser = if (JcefSupport.isAvailable()) createBrowserPanel() else null
+        return (browser ?: fallbackPanel()).apply { preferredSize = Dimension(940, 720) }
     }
+
+    /**
+     * Kept in its own method, and returning null on any failure, for the same
+     * reason the chat panel does it: whatever goes wrong with an optional
+     * capability, the statistics still have to open. Inlining this into the
+     * branch above would resolve `JBCefBrowser` even where the class is absent.
+     */
+    private fun createBrowserPanel(): JComponent? = try {
+        JBCefBrowser().let { browser ->
+            Disposer.register(disposable, browser)
+            browser.loadHTML(html)
+            browser.component
+        }
+    } catch (e: Throwable) {
+        LOG.warn("Could not start the embedded browser; showing the plain statistics view", e)
+        null
+    }
+
+    /** Loses the charts' finer styling, keeps every number and table readable. */
+    private fun fallbackPanel(): JComponent =
+        JBScrollPane(JEditorPane("text/html", html).apply { isEditable = false })
 
     override fun createActions(): Array<Action> = arrayOf(okAction)
 
     companion object {
+
+        private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(UsageStatsDialog::class.java)
 
         /** Reads transcripts off the EDT, then shows the dialog. */
         fun show(project: Project) {

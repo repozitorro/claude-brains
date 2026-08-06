@@ -58,10 +58,27 @@ tasks {
         untilBuild.set(provider { null })
     }
 
-    // Skip the buggy in-place plugin verifier by default; run manually with
-    // `./gradlew runPluginVerifier` once you have a packaged build.
+    // This is what would have caught the 2026.2 breakage before a user did: the
+    // embedded browser moved out of the platform, and every call into it became
+    // a NoClassDefFoundError. With untilBuild deliberately open-ended, the
+    // verifier is the only thing standing between "installs anywhere" and
+    // "installs anywhere and dies on launch".
+    //
+    // Bump the target list in gradle.properties; CI runs this as its own job
+    // because each IDE it checks against is a large download.
     runPluginVerifier {
-        enabled = false
+        ideVersions.set(
+            providers.gradleProperty("pluginVerifierIdeVersions")
+                .map { list -> list.split(",").map(String::trim).filter(String::isNotEmpty) }
+        )
+        // A plugin that tracks a moving platform always has deprecation warnings;
+        // a real incompatibility is a different thing and should stop the build.
+        failureLevel.set(
+            listOf(
+                org.jetbrains.intellij.tasks.RunPluginVerifierTask.FailureLevel.COMPATIBILITY_PROBLEMS,
+                org.jetbrains.intellij.tasks.RunPluginVerifierTask.FailureLevel.INVALID_PLUGIN
+            )
+        )
     }
 
     signPlugin {

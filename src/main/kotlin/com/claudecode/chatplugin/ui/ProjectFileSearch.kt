@@ -1,6 +1,6 @@
 package com.claudecode.chatplugin.ui
 
-import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectFileIndex
 
@@ -20,7 +20,7 @@ class ProjectFileSearch(private val project: Project) {
     private fun collect(): List<String> {
         val base = project.basePath?.replace('\\', '/')
         val result = ArrayList<String>()
-        ReadAction.run<RuntimeException> {
+        ApplicationManager.getApplication().runReadAction {
             ProjectFileIndex.getInstance(project).iterateContent { vf ->
                 if (!vf.isDirectory) {
                     val p = vf.path

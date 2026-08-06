@@ -1,10 +1,12 @@
 package com.claudecode.chatplugin
 
+import com.claudecode.chatplugin.cli.CliRunner
+import com.claudecode.chatplugin.cli.ClaudeCommandBuilder
+import com.claudecode.chatplugin.cli.StreamListener
+import com.claudecode.chatplugin.cli.StreamParser
+import com.claudecode.chatplugin.cli.TurnRequest
+import com.claudecode.chatplugin.cli.TurnResult
 import com.claudecode.chatplugin.model.ClaudeSession
-import com.claudecode.chatplugin.model.EditOp
-import com.claudecode.chatplugin.model.FileEdit
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.options.ShowSettingsUtil
@@ -14,36 +16,20 @@ import java.io.InputStreamReader
 import java.util.concurrent.Executors
 
 /**
- * Wraps the `claude` CLI as a subprocess and streams its output back to the UI.
+ * Runs the `claude` CLI for a chat turn and feeds its output to the UI.
  *
- * The protocol below was verified against Claude Code CLI **2.1.205** using:
- *
- *     claude -p "..." --output-format stream-json --verbose --include-partial-messages
- *
- * Each stdout line is a self-contained JSON object. The ones we care about:
- *
- *   {"type":"system","subtype":"init","session_id":"...", ...}   // start; has session_id
- *   {"type":"stream_event","event":{"type":"content_block_delta",
- *        "delta":{"type":"text_delta","text":"..."}}}            // streamed answer tokens
- *   {"type":"stream_event","event":{"type":"content_block_delta",
- *        "delta":{"type":"thinking_delta","thinking":"..."}}}    // streamed reasoning tokens
- *   {"type":"assistant","message":{...full block...}}            // COMPLETE block (ignored - dup)
- *   {"type":"result","subtype":"success","result":"...",
- *        "total_cost_usd":..., "usage":{...}, "duration_ms":...}  // terminal event
- *
- * Every line also carries a top-level `session_id`.
- *
- * Correctness notes (why we only read the deltas):
- *  - The full text arrives THREE times per turn: as `text_delta`s, again in the
- *    `assistant` event, and again in `result.result`. Reading more than one of
- *    these would duplicate the reply. We stream the deltas and treat `result`
- *    purely as the end-of-turn signal (plus cost/usage metadata).
+ * This class owns the *process*: starting it, streaming it, cancelling it, and
+ * the one recovery it can make on its own (a `--resume` id the CLI has since
+ * forgotten). What the command line looks like belongs to
+ * [ClaudeCommandBuilder], and what the output means belongs to [StreamParser] —
+ * both are plain classes so they can be tested without spawning anything.
  */
 @Service(Service.Level.PROJECT)
 class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disposable {
 
     private val log = Logger.getInstance(ClaudeCliService::class.java)
     private val executor = Executors.newCachedThreadPool()
+    private val parser = StreamParser()
 
     /** Shuts the worker pool down with the project, so its threads don't outlive it. */
     override fun dispose() {
@@ -51,57 +37,6 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
     }
 
     private val settings get() = ClaudeCodeSettings.getInstance(project)
-
-    /** Metadata from the terminal `result` event, handed to [StreamListener.onComplete]. */
-    data class TurnResult(
-        val isError: Boolean,
-        val costUsd: Double?,
-        val inputTokens: Int?,
-        val outputTokens: Int?,
-        val durationMs: Long?,
-        /** Tools the CLI refused to run this turn (from `result.permission_denials`). */
-        val permissionDenials: List<String> = emptyList(),
-        /**
-         * How much of the model's context this turn carried, and how much it
-         * holds. Everything the request was built from counts: fresh input plus
-         * whatever was read from or written to the cache.
-         */
-        val contextTokens: Long? = null,
-        val contextWindow: Long? = null,
-        /** HTTP status when the turn failed against the API (e.g. 401 for expired auth). */
-        val apiErrorStatus: Int? = null,
-        /**
-         * Human-readable failure text. On a failed turn the CLI puts the reason in
-         * `result.result` (where a successful turn would repeat the answer), so this
-         * is only populated when [isError] is true — reading it unconditionally
-         * would duplicate the streamed reply.
-         */
-        val errorMessage: String? = null
-    )
-
-    /**
-     * Callbacks for a single streamed turn. A plain interface (NOT a Kotlin
-     * `fun interface`, which may only declare one abstract method) so it can
-     * carry the several callbacks a streamed turn needs.
-     */
-    interface StreamListener {
-        fun onTextChunk(chunk: String)
-        fun onThinkingChunk(chunk: String) {}
-        /** A tool Claude invoked this turn, already summarised for display (e.g. "Read foo.kt"). */
-        fun onToolUse(id: String?, display: String) {}
-        /** The result of a previously reported tool call, correlated by its [toolUseId]. */
-        fun onToolResult(toolUseId: String?, isError: Boolean, output: String?) {}
-        /** A file-mutating tool call (Edit/MultiEdit/Write), for diff review. */
-        fun onFileEdit(edit: FileEdit) {}
-        fun onRateLimit(rateLimit: ClaudeSession.RateLimit) {}
-        /** MCP servers that did not come up, as "name (status)" strings. */
-        fun onMcpFailures(failed: List<String>) {}
-        fun onSessionId(cliSessionId: String)
-        /** The stored `--resume` id was gone, so the turn was retried with a fresh context. */
-        fun onSessionExpired() {}
-        fun onComplete(result: TurnResult)
-        fun onError(message: String)
-    }
 
     /**
      * Sends [prompt] for the given [session]. Resumes the CLI's own session
@@ -140,41 +75,18 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         allowResume: Boolean = true
     ) {
         val claudeCommand = settings.claudeCommand
-        val command = buildList {
-            add(claudeCommand)
-            add("-p")
-            add(prompt)
-            add("--output-format")
-            add("stream-json")
-            add("--verbose")                 // required alongside stream-json
-            add("--include-partial-messages") // enables token-by-token text/thinking deltas
-            // Per-chat mode wins; otherwise the project setting; otherwise no flag,
-            // which leaves the CLI on its own configured default.
-            (session.permissionMode ?: settings.permissionMode).takeIf { it.isNotBlank() }?.let {
-                add("--permission-mode")
-                add(it)
-            }
-            settings.allowedTools.trim().takeIf { it.isNotEmpty() }?.let {
-                add("--allowedTools")
-                add(it)
-            }
-            settings.disallowedTools.trim().takeIf { it.isNotEmpty() }?.let {
-                add("--disallowedTools")
-                add(it)
-            }
-            if (allowResume) {
-                session.cliSessionId?.let {
-                    add("--resume")
-                    add(it)
-                }
-            }
-            session.selectedModel?.let {
-                add("--model")
-                add(it)
-            }
-        }
-
-        val usedResume = command.contains("--resume")
+        val request = TurnRequest(
+            claudeCommand = claudeCommand,
+            prompt = prompt,
+            sessionPermissionMode = session.permissionMode,
+            projectPermissionMode = settings.permissionMode,
+            allowedTools = settings.allowedTools,
+            disallowedTools = settings.disallowedTools,
+            model = session.selectedModel,
+            resumeId = session.cliSessionId.takeIf { allowResume }
+        )
+        val command = ClaudeCommandBuilder.build(request)
+        val usedResume = request.resumeId != null
 
         val workingDir = project.basePath?.let { java.io.File(it) }
         val process = try {
@@ -192,11 +104,11 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         }
         session.process = process
 
-        val stderr = StringBuilder()
+        val stderr = StringBuffer()
         val stderrThread = Thread {
             BufferedReader(InputStreamReader(process.errorStream, Charsets.UTF_8)).forEachLine { line ->
                 log.info("claude stderr: $line")
-                stderr.appendLine(line)
+                stderr.append(line).append('\n')
             }
         }.apply { isDaemon = true; start() }
 
@@ -204,12 +116,12 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8)).use { reader ->
             reader.forEachLine { line ->
                 if (line.isBlank()) return@forEachLine
-                handleLine(line, listener)?.let { completed = it }
+                parser.parse(line, listener)?.let { completed = it }
             }
         }
 
         val exitCode = process.waitFor()
-        stderrThread.join(500)
+        stderrThread.join(STDERR_JOIN_MS)
 
         val stderrText = stderr.toString().trim()
         val result = completed
@@ -246,216 +158,6 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         }
     }
 
-    /** Processes one JSON line. Returns a [TurnResult] for the terminal `result` event, else null. */
-    private fun handleLine(line: String, listener: StreamListener): TurnResult? {
-        val json = try {
-            JsonParser.parseString(line).asJsonObject
-        } catch (e: Exception) {
-            // Not JSON (a stray log line) - ignore rather than corrupt the transcript.
-            log.debug("Ignoring non-JSON stdout line: $line")
-            return null
-        }
-
-        json.get("session_id")?.takeIf { it.isJsonPrimitive }?.let { listener.onSessionId(it.asString) }
-
-        when (json.get("type")?.asString) {
-            "stream_event" -> {
-                val event = json.getAsJsonObject("event") ?: return null
-                if (event.get("type")?.asString == "content_block_delta") {
-                    val delta = event.getAsJsonObject("delta") ?: return null
-                    when (delta.get("type")?.asString) {
-                        "text_delta" -> delta.get("text")?.asString?.let { listener.onTextChunk(it) }
-                        "thinking_delta" -> delta.get("thinking")?.asString?.let { listener.onThinkingChunk(it) }
-                    }
-                }
-            }
-            // Complete assistant blocks carry any tool_use calls (text is handled by
-            // the deltas above, so we deliberately read only tool_use here).
-            "assistant" -> {
-                val content = json.getAsJsonObject("message")?.getAsJsonArray("content") ?: return null
-                content.forEach { el ->
-                    val block = el.asJsonObject
-                    if (block.get("type")?.asString != "tool_use") return@forEach
-                    val name = block.get("name")?.asString
-                    val edit = parseFileEdit(name, block.getAsJsonObject("input"))
-                    if (edit != null) listener.onFileEdit(edit)
-                    else listener.onToolUse(block.get("id")?.asString, summariseToolUse(block))
-                }
-            }
-            // Tool results come back as user events; correlate by tool_use_id.
-            "user" -> {
-                val content = json.getAsJsonObject("message")?.getAsJsonArray("content") ?: return null
-                content.forEach { el ->
-                    val block = el.asJsonObject
-                    if (block.get("type")?.asString == "tool_result") {
-                        val isError = block.get("is_error")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-                        listener.onToolResult(
-                            block.get("tool_use_id")?.asString,
-                            isError,
-                            extractToolResultText(block.get("content"))
-                        )
-                    }
-                }
-            }
-            // The init event lists MCP servers and whether each one came up.
-            "system" -> {
-                if (json.get("subtype")?.asString == "init") {
-                    val failed = json.getAsJsonArray("mcp_servers")?.mapNotNull { el ->
-                        val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
-                        val status = o.get("status")?.takeIf { it.isJsonPrimitive }?.asString ?: return@mapNotNull null
-                        val name = o.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "unnamed"
-                        if (status.equals("connected", ignoreCase = true)) null else "$name ($status)"
-                    }.orEmpty()
-                    if (failed.isNotEmpty()) listener.onMcpFailures(failed)
-                }
-            }
-            "rate_limit_event" -> {
-                json.getAsJsonObject("rate_limit_info")?.let { info ->
-                    fun str(key: String) = info.get(key)?.takeIf { it.isJsonPrimitive }?.asString
-                    fun bool(key: String) = info.get(key)?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-                    listener.onRateLimit(
-                        ClaudeSession.RateLimit(
-                            status = str("status") ?: "",
-                            type = str("rateLimitType") ?: "",
-                            resetsAtEpochSec = info.get("resetsAt")?.takeIf { it.isJsonPrimitive }?.asLong,
-                            isUsingOverage = bool("isUsingOverage"),
-                            overageStatus = str("overageStatus")
-                        )
-                    )
-                }
-            }
-            "result" -> {
-                val usage = json.getAsJsonObject("usage")
-                val isError = json.get("is_error")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-                return TurnResult(
-                    isError = isError,
-                    costUsd = json.get("total_cost_usd")?.takeIf { it.isJsonPrimitive }?.asDouble,
-                    inputTokens = usage?.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
-                    outputTokens = usage?.get("output_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
-                    durationMs = json.get("duration_ms")?.takeIf { it.isJsonPrimitive }?.asLong,
-                    contextTokens = usage?.let {
-                        num(it, "input_tokens") + num(it, "cache_read_input_tokens") +
-                            num(it, "cache_creation_input_tokens")
-                    },
-                    contextWindow = parseContextWindow(json.getAsJsonObject("modelUsage")),
-                    permissionDenials = parsePermissionDenials(json.getAsJsonArray("permission_denials")),
-                    apiErrorStatus = json.get("api_error_status")?.takeIf { it.isJsonPrimitive }?.asInt,
-                    errorMessage = if (isError) json.get("result")?.takeIf { it.isJsonPrimitive }?.asString else null
-                )
-            }
-        }
-        return null
-    }
-
-    /**
-     * Pulls display text out of a `tool_result.content`, which is either a plain
-     * string or an array of blocks (text, images, ...). Long output is clamped —
-     * this is a preview in a chat bubble, not a terminal.
-     */
-    internal fun extractToolResultText(content: com.google.gson.JsonElement?): String? {
-        val raw = when {
-            content == null -> null
-            content.isJsonPrimitive -> content.asString
-            content.isJsonArray -> content.asJsonArray.mapNotNull { el ->
-                val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
-                when (o.get("type")?.asString) {
-                    "text" -> o.get("text")?.takeIf { it.isJsonPrimitive }?.asString
-                    "image" -> "[image]"
-                    else -> null
-                }
-            }.joinToString("\n").ifBlank { null }
-            else -> null
-        }
-        val trimmed = raw?.trim()?.ifEmpty { null } ?: return null
-        return if (trimmed.length > MAX_TOOL_OUTPUT) {
-            trimmed.take(MAX_TOOL_OUTPUT) + "\n… (truncated)"
-        } else {
-            trimmed
-        }
-    }
-
-    /** Parses a file-mutating tool_use (Edit/MultiEdit/Write) into a [FileEdit], else null. */
-    private fun parseFileEdit(name: String?, input: JsonObject?): FileEdit? {
-        if (input == null) return null
-        val path = input.get("file_path")?.takeIf { it.isJsonPrimitive }?.asString ?: return null
-        fun str(o: JsonObject, key: String) = o.get(key)?.takeIf { it.isJsonPrimitive }?.asString
-        fun bool(o: JsonObject, key: String) = o.get(key)?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-
-        return when (name) {
-            "Edit" -> FileEdit(path, name, readSnapshot(path)).apply {
-                ops.add(EditOp(str(input, "old_string"), str(input, "new_string"), null, bool(input, "replace_all")))
-            }
-            "MultiEdit" -> FileEdit(path, name, readSnapshot(path)).apply {
-                input.getAsJsonArray("edits")?.forEach { e ->
-                    val o = e.asJsonObject
-                    ops.add(EditOp(str(o, "old_string"), str(o, "new_string"), null, bool(o, "replace_all")))
-                }
-            }
-            "Write" -> FileEdit(path, name, readSnapshot(path)).apply {
-                ops.add(EditOp(null, null, str(input, "content"), false))
-            }
-            else -> null
-        }
-    }
-
-    private fun num(obj: JsonObject, key: String): Long =
-        obj.get(key)?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L
-
-    /**
-     * The context size from `result.modelUsage`, which reports it per model.
-     *
-     * A turn can touch more than one model (a sub-agent on a smaller one, say);
-     * the largest window is the one the conversation itself is bounded by.
-     */
-    private fun parseContextWindow(modelUsage: JsonObject?): Long? =
-        modelUsage?.entrySet()
-            ?.mapNotNull { (_, value) ->
-                value.takeIf { it.isJsonObject }?.asJsonObject
-                    ?.get("contextWindow")?.takeIf { it.isJsonPrimitive }?.asLong
-            }
-            ?.maxOrNull()
-            ?.takeIf { it > 0 }
-
-    /** Extracts tool names from the `result.permission_denials` array, defensively. */
-    private fun parsePermissionDenials(arr: com.google.gson.JsonArray?): List<String> {
-        if (arr == null) return emptyList()
-        return arr.mapNotNull { el ->
-            when {
-                el.isJsonPrimitive -> el.asString
-                el.isJsonObject -> {
-                    val o = el.asJsonObject
-                    listOf("tool_name", "toolName", "tool", "name")
-                        .firstNotNullOfOrNull { k -> o.get(k)?.takeIf { it.isJsonPrimitive }?.asString }
-                        ?: el.toString()
-                }
-                else -> null
-            }
-        }
-    }
-
-    /** Best-effort snapshot of a file's current on-disk content (the "before" for Write). */
-    private fun readSnapshot(path: String): String? = try {
-        java.io.File(path).takeIf { it.isFile }?.readText()
-    } catch (e: Exception) {
-        null
-    }
-
-    /** Turns a tool_use block into a compact one-liner like "Read foo.kt" or "Bash npm test". */
-    private fun summariseToolUse(block: com.google.gson.JsonObject): String {
-        val name = block.get("name")?.asString ?: "tool"
-        val input = block.getAsJsonObject("input") ?: return name
-        val argKey = listOf("file_path", "path", "command", "pattern", "url", "query", "prompt")
-            .firstOrNull { input.has(it) }
-        val arg = argKey?.let { input.get(it)?.takeIf { v -> v.isJsonPrimitive }?.asString } ?: return name
-        // Shorten file paths to their basename; clamp long commands.
-        val shown = if (argKey == "file_path" || argKey == "path") {
-            arg.replace('\\', '/').substringAfterLast('/')
-        } else {
-            arg.replace(Regex("\\s+"), " ").let { if (it.length > 60) it.take(57) + "…" else it }
-        }
-        return "$name $shown"
-    }
-
     /**
      * Runs `claude mcp list` and returns its raw output (stdout+stderr).
      *
@@ -463,21 +165,18 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
      * this only surfaces what's configured, so the plugin never rewrites the
      * user's MCP configuration behind their back. Blocking; call off the EDT.
      */
-    fun listMcpServers(): String = try {
-        val process = ProcessBuilder(listOf(settings.claudeCommand, "mcp", "list"))
-            .apply { project.basePath?.let { directory(java.io.File(it)) } }
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader(Charsets.UTF_8).readText()
-        if (!process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)) {
-            process.destroy()
-            "Timed out waiting for '${settings.claudeCommand} mcp list'."
-        } else {
-            output.trim().ifEmpty { "No output from '${settings.claudeCommand} mcp list'." }
+    fun listMcpServers(): String {
+        val command = settings.claudeCommand
+        val result = CliRunner.run(
+            command = listOf(command, "mcp", "list"),
+            workingDir = project.basePath?.let { java.io.File(it) },
+            timeoutSeconds = MCP_LIST_TIMEOUT_SECONDS
+        )
+        return when {
+            result.failure != null -> "Could not run '$command mcp list': ${result.failure.message}"
+            result.timedOut -> "Timed out waiting for '$command mcp list'."
+            else -> result.output.ifEmpty { "No output from '$command mcp list'." }
         }
-    } catch (e: Exception) {
-        log.warn("claude mcp list failed", e)
-        "Could not run '${settings.claudeCommand} mcp list': ${e.message}"
     }
 
     fun openSettings() {
@@ -495,7 +194,9 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
          */
         internal val STALE_SESSION = Regex("No conversation found with session ID", RegexOption.IGNORE_CASE)
 
-        /** Tool output beyond this is clamped before it reaches the chat. */
-        internal const val MAX_TOOL_OUTPUT = 2000
+        private const val MCP_LIST_TIMEOUT_SECONDS = 30L
+
+        /** How long to wait for the stderr drain once the process is gone. */
+        private const val STDERR_JOIN_MS = 500L
     }
 }

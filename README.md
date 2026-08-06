@@ -147,14 +147,17 @@ Things you may still want to adjust:
 
 1. **CLI protocol drift** — the JSON event shape from `claude -p ...
    --output-format stream-json --verbose --include-partial-messages` is an
-   implementation detail that can change between CLI versions. If a future
-   version breaks parsing, re-sample it and update `handleLine`:
+   implementation detail that can change between CLI versions. A recorded turn
+   under `src/test/resources/protocol/` is replayed through `StreamParser` by
+   `StreamParserTest`, so drift shows up as a failing test rather than as a
+   chat that renders nothing. To re-sample after a CLI upgrade:
 
    ```bash
    claude -p "hi" --output-format stream-json --verbose \
-     --include-partial-messages > sample.jsonl
-   cat sample.jsonl
+     --include-partial-messages > src/test/resources/protocol/turn-<version>.jsonl
    ```
+
+   Then point the test at the new file and fix `StreamParser` until it passes.
 
    The events that matter: `stream_event` → `event.content_block_delta` →
    `delta.text_delta` (answer) / `delta.thinking_delta` (reasoning), and the
@@ -168,9 +171,15 @@ Things you may still want to adjust:
 
 ```
 src/main/kotlin/com/claudecode/chatplugin/
-  ClaudeCliService.kt       # spawns `claude`, parses streamed JSON (text/thinking/tool_use/result)
+  ClaudeCliService.kt       # owns the turn's process: start, stream, cancel, retry a stale --resume
   ClaudeSessionManager.kt   # owns + persists all parallel sessions (per-project storage)
   ClaudeCodeSettings.kt     # persisted CLI path / model / permission mode / tool policy
+  cli/
+    ClaudeCommandBuilder.kt # what a turn's command line looks like (pure; tested)
+    StreamParser.kt         # stream-json line -> events (text/thinking/tool_use/result); pure, tested
+    StreamEvents.kt         # TurnResult + the StreamListener callbacks
+    CliRunner.kt            # short-lived CLI calls with a timeout that actually bites
+src/test/resources/protocol/  # a recorded turn, replayed through StreamParser
   model/
     ChatMessage.kt          # role, text, thinking, tool calls, file edits
     ClaudeSession.kt        # per-session --resume id, cumulative usage, rate-limit snapshot

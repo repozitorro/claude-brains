@@ -12,7 +12,7 @@ import com.claudecode.chatplugin.model.ToolCall
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileChooser.FileChooser
-import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
+import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.fileChooser.FileChooserFactory
 import com.intellij.openapi.fileChooser.FileSaverDescriptor
 import com.intellij.openapi.ide.CopyPasteManager
@@ -48,7 +48,19 @@ import javax.swing.Timer
  * when JCEF is available, otherwise a plain Swing fallback ([SwingChatView]).
  * Messages are addressed by their index in [ClaudeSession.messages].
  */
-class ChatPanel(private val project: Project, private val session: ClaudeSession) : JPanel(BorderLayout()) {
+class ChatPanel(private val project: Project, private val session: ClaudeSession) :
+    JPanel(BorderLayout()), com.intellij.openapi.Disposable {
+
+    /**
+     * Set once this panel has been disposed.
+     *
+     * A turn already in flight keeps posting to the EDT after its tab is gone,
+     * and those callbacks would otherwise render into a released browser. The
+     * CLI process is killed on dispose, but its listener can still have work
+     * queued, so every rendering path checks this first.
+     */
+    @Volatile
+    private var disposed = false
 
     private val cliService = project.getService(ClaudeCliService::class.java)
     private val settings = ClaudeCodeSettings.getInstance(project)
@@ -65,7 +77,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private fun createChatView(): ChatView =
         if (JcefChatView.isAvailable()) {
             try {
-                JcefChatView(project, ::handleEditLink)
+                // Parented to this panel, not to the project: the browser has to
+                // go when its tab does, or every closed chat keeps one alive.
+                JcefChatView(this, ::handleEditLink)
             } catch (e: Throwable) {
                 LOG.warn("Could not start the embedded browser; using the Swing view", e)
                 SwingChatView(::handleEditLink)
@@ -304,11 +318,15 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         installEnterToSend()
         installImagePaste()
 
+        // The review bar subscribes to the review service, so it has to be
+        // released with this panel rather than outliving it.
+        com.intellij.openapi.util.Disposer.register(this, reviewBar)
+
         // Repaint any history the session already has (persisted or pre-filled).
-        session.messages.forEachIndexed { i, m -> chatView.render(i, m) }
+        session.messages.forEachIndexed { i, m -> renderTo(i, m) }
         updateAnalyticsLabel()
 
-        limitService.addChangeListener {
+        limitService.addChangeListener(this) {
             ApplicationManager.getApplication().invokeLater { if (!project.isDisposed) updateLimitLabel() }
         }
         updateLimitLabel()
@@ -320,9 +338,19 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         HandCursors.applyTo(this)
     }
 
-    fun dispose() {
+    /**
+     * Called by the tool window's content disposer, so it runs when the tab is
+     * closed *and* when the project closes — the latter used to be missed, which
+     * left the limit ticker firing at a dead project once a minute.
+     */
+    override fun dispose() {
+        disposed = true
         limitTicker.stop()
         renderTimer.stop()
+        pendingRender = null
+        // A turn still running belongs to this tab. Left alone the CLI process
+        // would outlive the panel with nowhere to report back to.
+        if (session.isBusy) cliService.cancel(session)
         chatView.dispose()
     }
 
@@ -425,6 +453,13 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     private fun exportTranscript() {
+        // Deprecated from 2025 on, and knowingly kept: 2024.1 ships no other
+        // constructor for this at all (checked against the SDK, not from
+        // memory), and that is the floor sinceBuild promises. Reaching for the
+        // newer one would compile here and throw NoSuchMethodError there —
+        // exactly the failure the plugin verifier exists to prevent. Replace it
+        // when the floor moves past 2024.x, not before.
+        @Suppress("DEPRECATION")
         val descriptor = FileSaverDescriptor("Export Conversation", "Save the transcript as Markdown", "md")
         val suggested = session.displayName.replace(Regex("[^A-Za-z0-9._-]"), "-") + ".md"
         val target = FileChooserFactory.getInstance()
@@ -474,7 +509,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     private fun chooseImage() {
-        val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor()
+        // The factory's createSingleFileDescriptor() is what this used to call;
+        // it is deprecated from 2025 on, and its replacement does not exist in
+        // 2024.1, which is the floor this still supports. The constructor it
+        // delegated to is available and current in both: one file, no folders,
+        // no jars, no multiselect.
+        val descriptor = FileChooserDescriptor(true, false, false, false, false, false)
             .withFileFilter { it.extension?.lowercase() in IMAGE_EXTENSIONS }
             .apply { title = "Attach Image" }
         val chosen = FileChooser.chooseFile(descriptor, project, null) ?: return
@@ -693,8 +733,16 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private fun addAndRender(message: ChatMessage): Int {
         session.messages.add(message)
         val index = session.messages.lastIndex
-        chatView.render(index, message)
+        renderTo(index, message)
         return index
+    }
+
+    /**
+     * The one way anything reaches the view, so a late callback from a turn
+     * whose tab has closed can't touch a released browser.
+     */
+    private fun renderTo(index: Int, message: ChatMessage) {
+        if (!disposed) chatView.render(index, message)
     }
 
     private fun sendCurrentInput() {
@@ -717,7 +765,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         fun repaint() = scheduleRender(assistantIndex, assistantMessage)
         fun repaintNow() = renderNow(assistantIndex, assistantMessage)
 
-        cliService.sendPrompt(session, prompt, object : ClaudeCliService.StreamListener {
+        cliService.sendPrompt(session, prompt, object : com.claudecode.chatplugin.cli.StreamListener {
             override fun onTextChunk(chunk: String) {
                 ApplicationManager.getApplication().invokeLater {
                     assistantMessage.text += chunk
@@ -796,7 +844,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 }
             }
 
-            override fun onComplete(result: ClaudeCliService.TurnResult) {
+            override fun onComplete(result: com.claudecode.chatplugin.cli.TurnResult) {
                 ApplicationManager.getApplication().invokeLater {
                     assistantMessage.isStreaming = false
                     if (result.isError) {
@@ -878,11 +926,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private var pendingRender: Pair<Int, ChatMessage>? = null
 
     private val renderTimer = Timer(RENDER_INTERVAL_MS) {
-        pendingRender?.let { (index, message) -> chatView.render(index, message) }
+        pendingRender?.let { (index, message) -> renderTo(index, message) }
         pendingRender = null
     }.apply { isRepeats = false }
 
     private fun scheduleRender(index: Int, message: ChatMessage) {
+        if (disposed) return
         pendingRender = index to message
         if (!renderTimer.isRunning) renderTimer.start()
     }
@@ -891,7 +940,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private fun renderNow(index: Int, message: ChatMessage) {
         renderTimer.stop()
         pendingRender = null
-        chatView.render(index, message)
+        renderTo(index, message)
     }
 
     private companion object {

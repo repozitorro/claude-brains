@@ -1,12 +1,12 @@
 package com.claudecode.chatplugin.auth
 
 import com.claudecode.chatplugin.ClaudeCodeSettings
+import com.claudecode.chatplugin.cli.CliRunner
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
-import java.util.concurrent.TimeUnit
 
 /**
  * Reads the CLI's sign-in state and hands off signing in to the CLI itself.
@@ -27,26 +27,19 @@ class ClaudeAuth(private val project: Project) {
     /** Runs `claude auth status`. Blocking (a few seconds at most); call off the EDT. */
     fun status(): AuthStatus {
         val exe = command
-        return try {
-            val process = ProcessBuilder(listOf(exe, "auth", "status"))
-                .apply { project.basePath?.let { directory(java.io.File(it)) } }
-                .redirectErrorStream(true)
-                .start()
-
-            val output = process.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            if (!process.waitFor(STATUS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                process.destroy()
-                return AuthStatus.Unavailable("`$exe auth status` did not finish in ${STATUS_TIMEOUT_SECONDS}s")
-            }
-            AuthStatus.parse(output)
-        } catch (e: java.io.IOException) {
-            AuthStatus.Unavailable(
+        val result = CliRunner.run(
+            command = listOf(exe, "auth", "status"),
+            workingDir = project.basePath?.let { java.io.File(it) },
+            timeoutSeconds = STATUS_TIMEOUT_SECONDS
+        )
+        return when {
+            result.failure != null -> AuthStatus.Unavailable(
                 "Could not run '$exe'. Install the Claude Code CLI, or set its full path in " +
-                    "Settings → Tools → Claude Brains. (${e.message})"
+                    "Settings → Tools → Claude Brains. (${result.failure.message})"
             )
-        } catch (e: Exception) {
-            log.warn("auth status failed", e)
-            AuthStatus.Unavailable(e.message ?: e.toString())
+            result.timedOut ->
+                AuthStatus.Unavailable("`$exe auth status` did not finish in ${STATUS_TIMEOUT_SECONDS}s")
+            else -> AuthStatus.parse(result.output)
         }
     }
 
@@ -91,17 +84,14 @@ class ClaudeAuth(private val project: Project) {
         return candidates.firstOrNull { which(it.first()) }?.let { GeneralCommandLine(it) }
     }
 
-    private fun which(tool: String): Boolean = try {
-        val p = ProcessBuilder(listOf("which", tool)).redirectErrorStream(true).start()
-        // waitFor(timeout) only says the process finished, so check the exit code
-        // too — otherwise a failed lookup would read as "this terminal exists".
-        if (p.waitFor(3, TimeUnit.SECONDS)) p.exitValue() == 0 else { p.destroy(); false }
-    } catch (e: Exception) {
-        false
-    }
+    // `succeeded` is exit code 0 *and* not timed out — a lookup that had to be
+    // killed must not read as "this terminal exists".
+    private fun which(tool: String): Boolean =
+        CliRunner.run(listOf("which", tool), timeoutSeconds = WHICH_TIMEOUT_SECONDS).succeeded
 
     companion object {
         private const val STATUS_TIMEOUT_SECONDS = 20L
+        private const val WHICH_TIMEOUT_SECONDS = 3L
 
         fun getInstance(project: Project): ClaudeAuth = project.getService(ClaudeAuth::class.java)
     }

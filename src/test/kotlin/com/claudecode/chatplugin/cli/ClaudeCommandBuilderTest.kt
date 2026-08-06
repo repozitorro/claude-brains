@@ -1,0 +1,90 @@
+package com.claudecode.chatplugin.cli
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Pins the flags a turn is launched with.
+ *
+ * An omitted flag and an empty one mean different things to the CLI: omitting
+ * `--permission-mode` leaves it on whatever the user configured, while passing
+ * a blank one is an error. Same for `--model` and the tool lists. None of that
+ * is visible from the chat, so it is pinned here.
+ */
+class ClaudeCommandBuilderTest {
+
+    private fun build(request: TurnRequest) = ClaudeCommandBuilder.build(request)
+
+    private val minimal = TurnRequest(claudeCommand = "claude", prompt = "hello")
+
+    /** The value passed after [flag], or null when the flag is absent. */
+    private fun List<String>.valueOf(flag: String): String? =
+        indexOf(flag).takeIf { it >= 0 && it + 1 < size }?.let { this[it + 1] }
+
+    @Test
+    fun `a minimal turn asks for the streaming protocol and nothing else`() {
+        val command = build(minimal)
+
+        assertEquals("claude", command.first())
+        assertEquals("hello", command.valueOf("-p"))
+        assertEquals("stream-json", command.valueOf("--output-format"))
+        // Both are required for token-by-token deltas to arrive at all.
+        assertTrue(command.contains("--verbose"))
+        assertTrue(command.contains("--include-partial-messages"))
+
+        listOf("--permission-mode", "--allowedTools", "--disallowedTools", "--resume", "--model")
+            .forEach { assertFalse("$it should be omitted", command.contains(it)) }
+    }
+
+    @Test
+    fun `the chat's own permission mode wins over the project's`() {
+        val command = build(minimal.copy(sessionPermissionMode = "plan", projectPermissionMode = "acceptEdits"))
+        assertEquals("plan", command.valueOf("--permission-mode"))
+    }
+
+    @Test
+    fun `the project setting applies when the chat has no opinion`() {
+        val command = build(minimal.copy(sessionPermissionMode = null, projectPermissionMode = "acceptEdits"))
+        assertEquals("acceptEdits", command.valueOf("--permission-mode"))
+    }
+
+    @Test
+    fun `neither set means no flag at all, so the CLI keeps its own default`() {
+        assertNull(ClaudeCommandBuilder.permissionMode(minimal))
+        assertFalse(build(minimal.copy(projectPermissionMode = "   ")).contains("--permission-mode"))
+    }
+
+    @Test
+    fun `tool policies are passed only when non-blank, and trimmed`() {
+        val command = build(minimal.copy(allowedTools = "  Read Edit  ", disallowedTools = "   "))
+
+        assertEquals("Read Edit", command.valueOf("--allowedTools"))
+        assertFalse(command.contains("--disallowedTools"))
+    }
+
+    @Test
+    fun `a stored session is resumed, and a fresh turn is not`() {
+        assertEquals("abc-123", build(minimal.copy(resumeId = "abc-123")).valueOf("--resume"))
+        assertFalse(build(minimal.copy(resumeId = null)).contains("--resume"))
+    }
+
+    @Test
+    fun `the model id is passed verbatim, alias or pinned`() {
+        assertEquals("claude-opus-5", build(minimal.copy(model = "claude-opus-5")).valueOf("--model"))
+        assertEquals("opus", build(minimal.copy(model = "opus")).valueOf("--model"))
+    }
+
+    @Test
+    fun `the prompt is one argument however it is written`() {
+        // Prompts carry newlines, quotes and backticks; none of that may split
+        // into further arguments or be interpreted before the CLI sees it.
+        val awkward = "fix this:\n```\nval x = \"a b\" && rm -rf /\n```\n"
+        val command = build(minimal.copy(prompt = awkward))
+
+        assertEquals(awkward, command.valueOf("-p"))
+        assertEquals(1, command.count { it == awkward })
+    }
+}

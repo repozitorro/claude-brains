@@ -9,6 +9,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import java.util.concurrent.CopyOnWriteArrayList
@@ -27,8 +28,10 @@ class EditReviewService(private val project: Project) : Disposable {
     private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(EditReviewService::class.java)
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
-    fun addChangeListener(listener: () -> Unit) {
+    /** Subscribes for as long as [parent] lives — see `RateLimitService.addChangeListener`. */
+    fun addChangeListener(parent: Disposable, listener: () -> Unit) {
         listeners.add(listener)
+        Disposer.register(parent, Disposable { listeners.remove(listener) })
     }
 
     private fun fireChanged() = listeners.forEach { runCatching { it() } }

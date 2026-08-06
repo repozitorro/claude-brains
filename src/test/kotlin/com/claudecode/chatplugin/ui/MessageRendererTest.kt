@@ -72,6 +72,41 @@ class MessageRendererTest {
         assertTrue(html.contains("a.kt")) // the edit is still listed, just not clickable
     }
 
+    /**
+     * The fragment is written into the embedded browser with `innerHTML`, and
+     * that page holds a bridge back into the IDE. CommonMark passes raw HTML
+     * through unless told not to, and a reply can quote anything — a file, a web
+     * page, tool output. So markdown must never be able to introduce markup.
+     */
+    @Test
+    fun `raw HTML in a reply is escaped, not rendered`() {
+        val msg = ChatMessage(
+            Role.ASSISTANT,
+            "The file contains <img src=x onerror=\"alert(1)\">\n\n<script>window.cbLink('x')</script>"
+        )
+
+        val html = MessageRenderer.fragment(msg, 0, streaming = false)
+
+        assertFalse(html.contains("<script>"))
+        assertFalse(html.contains("<img"))
+        assertFalse(html.contains("onerror=\""))
+        assertTrue(html.contains("&lt;script&gt;"))
+        assertTrue(html.contains("&lt;img"))
+    }
+
+    @Test
+    fun `markdown itself still renders`() {
+        // The escaping above must not be paid for with the formatting the panel
+        // exists to show.
+        val html = MessageRenderer.fragment(
+            ChatMessage(Role.ASSISTANT, "**bold** and `code`\n\n- one\n- two"), 0, streaming = false
+        )
+
+        assertTrue(html.contains("<strong>bold</strong>"))
+        assertTrue(html.contains("<code>code</code>"))
+        assertTrue(html.contains("<li>one</li>"))
+    }
+
     @Test
     fun `tool call status is reflected and text is escaped`() {
         val msg = ChatMessage(Role.ASSISTANT, "", toolCalls = mutableListOf(
