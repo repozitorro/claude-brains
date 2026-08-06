@@ -30,6 +30,37 @@ class RateLimitService(private val project: Project) {
     private val usedTokens = HashMap<String, Long>()
     private val lastUsageScan = AtomicLong(0)
 
+    /** Percentages, straight from the CLI's own `/usage` report. */
+    @Volatile
+    private var bars: List<LimitBar> = emptyList()
+    private val lastBarsRead = AtomicLong(0)
+
+    fun limitBars(): List<LimitBar> = bars
+
+    /**
+     * Refreshes the percentages by asking the CLI.
+     *
+     * Each call spawns the CLI briefly and leaves a (zero-token) session
+     * transcript behind, so it is rate-limited to once a minute and skipped
+     * entirely when the panel isn't on screen.
+     */
+    fun refreshBars(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val last = lastBarsRead.get()
+        if (!force && now - last < BARS_INTERVAL_MS) return
+        if (!lastBarsRead.compareAndSet(last, now)) return
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val fresh = UsageLimitsReader.read(project)
+            if (fresh.isNotEmpty() && fresh != bars) {
+                bars = fresh
+                ApplicationManager.getApplication().invokeLater {
+                    if (!project.isDisposed) fireChanged()
+                }
+            }
+        }
+    }
+
     fun addChangeListener(listener: () -> Unit) {
         listeners.add(listener)
     }
@@ -88,6 +119,15 @@ class RateLimitService(private val project: Project) {
      * Null when nothing has been reported yet.
      */
     fun summary(): String? {
+        // The CLI's own percentages when they're available — they are the real
+        // answer to "how much is left" and nothing here can improve on them.
+        val bars = limitBars()
+        if (bars.isNotEmpty()) {
+            val parts = bars.map { "${it.shortLabel()} ${it.percentUsed}%" }.toMutableList()
+            primary()?.countdown()?.let { parts += "resets $it" }
+            return parts.joinToString("  ·  ")
+        }
+
         val window = primary() ?: return null
         val parts = mutableListOf(window.displayName() + " window")
         window.countdown()?.let { parts += "resets $it" }
@@ -100,10 +140,20 @@ class RateLimitService(private val project: Project) {
     /** Explains, in the tooltip, why there is no "N% left" here. */
     fun explanation(): String = buildString {
         append("<html>")
-        append("Claude Code reports when a limit window resets, and whether requests are ")
-        append("currently allowed — but never how much of the limit is left. ")
-        append("So this shows what has actually been spent since the window opened, ")
-        append("counted from the CLI's own session transcripts.")
+        if (limitBars().isNotEmpty()) {
+            append("Percentages come from the CLI's own <code>/usage</code> report, refreshed ")
+            append("every minute while this panel is open.")
+            limitBars().forEach { bar ->
+                append("<br><br><b>").append(bar.label).append("</b>: ")
+                append(bar.percentUsed).append("% used, resets ").append(bar.resetsAt)
+            }
+            append("</html>")
+            return@buildString
+        }
+        append("Claude Code's machine-readable stream reports when a limit window resets ")
+        append("and whether requests are allowed, but not how much is left. ")
+        append("Until its usage report can be read, this shows what has actually been spent ")
+        append("since the window opened, counted from the CLI's own session transcripts.")
         windows().forEach { w ->
             append("<br><br><b>").append(w.displayName()).append("</b>: ").append(w.status)
             w.countdown()?.let { append(", resets ").append(it) }
@@ -113,6 +163,7 @@ class RateLimitService(private val project: Project) {
 
     companion object {
         private const val USAGE_SCAN_INTERVAL_MS = 60_000L
+        private const val BARS_INTERVAL_MS = 60_000L
 
         fun getInstance(project: Project): RateLimitService =
             project.getService(RateLimitService::class.java)

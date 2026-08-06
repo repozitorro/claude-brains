@@ -118,8 +118,15 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         border = JBUI.Borders.empty(0, 6)
     }
 
-    /** The reset time is a countdown, so it has to tick rather than be set once. */
-    private val limitTicker = Timer(LIMIT_TICK_MS) { updateLimitLabel() }.apply { isRepeats = true }
+    /**
+     * Refreshes the limit readout every minute: the countdown has to tick, and
+     * the percentages come from asking the CLI, which is only worth doing while
+     * someone can see the answer.
+     */
+    private val limitTicker = Timer(LIMIT_TICK_MS) {
+        if (isShowing) limitService.refreshBars()
+        updateLimitLabel()
+    }.apply { isRepeats = true }
 
     private val composer = ComposerPanel(JBUI.CurrentTheme.Focus.focusColor())
 
@@ -270,6 +277,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             ApplicationManager.getApplication().invokeLater { if (!project.isDisposed) updateLimitLabel() }
         }
         updateLimitLabel()
+        limitService.refreshBars(force = true)
         limitTicker.start()
     }
 
@@ -844,7 +852,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(ChatPanel::class.java)
         val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
         const val RENDER_INTERVAL_MS = 50
-        const val LIMIT_TICK_MS = 30_000
+        const val LIMIT_TICK_MS = 60_000
     }
 
     /**
