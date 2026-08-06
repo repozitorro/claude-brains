@@ -26,9 +26,9 @@ import javax.swing.Icon
 /**
  * Draws one file's pending changes into an open editor: the new lines
  * highlighted, the lines they replaced shown in red directly above, and
- * Accept / Reject at the right edge of each change — plus a strip floating over
- * the bottom of the editor for stepping between changes and deciding the file
- * as a whole.
+ * Accept / Reject just past the end of the change's own code — plus a strip
+ * floating over the bottom of the editor for stepping between changes and
+ * deciding the file as a whole.
  *
  * Per-change actions appear twice on purpose: as buttons in the inlay, and in
  * the gutter icon's menu, which uses the platform's own click handling. If the
@@ -217,8 +217,9 @@ class EditReviewDecorator(
                 }
             }
 
-            // Buttons sit at the right edge of the change's first row, out of the
-            // way of the code itself.
+            // Buttons follow the code rather than the window: pinned to the far
+            // right of a wide editor they end up an entire screen away from the
+            // change they belong to.
             val accept = "Accept"
             val reject = "Reject"
             val padding = 8
@@ -226,8 +227,12 @@ class EditReviewDecorator(
             val aw = metrics.stringWidth(accept) + padding * 2
             val rw = metrics.stringWidth(reject) + padding * 2
             val h = lh - 4
-            val rx = target.x + target.width - rw - 12
-            val ax = rx - gap - aw
+            val contentWidth = widestLine(metrics)
+            val ax = minOf(
+                target.x + contentWidth + JBUI.scale(24),
+                target.x + target.width - aw - gap - rw - 12
+            ).coerceAtLeast(target.x)
+            val rx = ax + aw + gap
             val y = target.y + 2
 
             g.color = JBUI.CurrentTheme.Focus.focusColor()
@@ -244,10 +249,32 @@ class EditReviewDecorator(
             rejectBounds = Rectangle(rx - target.x, y - target.y, rw, h)
         }
 
+        /**
+         * How wide the change actually is: the longest of the lines it removed
+         * and the lines it produced. Long hunks are sampled rather than measured
+         * end to end — this runs on every repaint.
+         */
+        private fun widestLine(metrics: java.awt.FontMetrics): Int {
+            val fromRemoved = lines.take(MAX_MEASURED_LINES).maxOfOrNull { metrics.stringWidth(it) } ?: 0
+            val marker = hunk.marker
+            val fromAdded = if (marker.isValid && marker.endOffset > marker.startOffset) {
+                marker.document.getText(
+                    com.intellij.openapi.util.TextRange(marker.startOffset, marker.endOffset)
+                ).lineSequence().take(MAX_MEASURED_LINES).maxOfOrNull { metrics.stringWidth(it) } ?: 0
+            } else {
+                0
+            }
+            return maxOf(fromRemoved, fromAdded)
+        }
+
         fun hitTest(local: java.awt.Point): Action? = when {
             acceptBounds?.contains(local) == true -> Action.ACCEPT
             rejectBounds?.contains(local) == true -> Action.REJECT
             else -> null
+        }
+
+        private companion object {
+            const val MAX_MEASURED_LINES = 50
         }
     }
 }
