@@ -203,9 +203,11 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         preferredSize = Dimension(420, 600)
 
         // Top bar: what this chat runs as (model, permission mode) on the left,
-        // what you can do with the transcript on the right.
-        val topBar = JPanel(BorderLayout()).apply {
-            border = JBUI.Borders.empty(4, 6, 2, 4)
+        // what you can do with the transcript on the right — with the account's
+        // limits on their own line underneath, where they read as a state of the
+        // account rather than as one more control.
+        val controlsRow = JPanel(BorderLayout()).apply {
+            isOpaque = false
             add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply {
                 isOpaque = false
                 add(modelSelector)
@@ -213,10 +215,22 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }, BorderLayout.WEST)
             add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0)).apply {
                 isOpaque = false
-                add(limitLabel)
                 add(iconButton(AllIcons.Actions.Copy, "Copy the conversation as Markdown") { copyTranscript() })
                 add(iconButton(AllIcons.ToolbarDecorator.Export, "Export the conversation to a Markdown file") { exportTranscript() })
             }, BorderLayout.EAST)
+        }
+
+        val topBar = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.empty(4, 6, 2, 4)
+            add(controlsRow, BorderLayout.NORTH)
+            add(
+                JPanel(BorderLayout()).apply {
+                    isOpaque = false
+                    border = JBUI.Borders.empty(2, 4, 0, 0)
+                    add(limitLabel, BorderLayout.WEST)
+                },
+                BorderLayout.SOUTH
+            )
         }
 
         // Composer: one card holding the prompt, with its controls on a footer
@@ -530,19 +544,17 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
     /** Cumulative token/cost analytics for this session, plus the rate-limit window. */
     private fun updateAnalyticsLabel() {
+        // Only this conversation's own spend. The account's limits and their
+        // reset live under the model selectors — repeating the countdown here
+        // just said the same thing twice.
         val parts = mutableListOf<String>()
         if (session.turnCount > 0) {
             parts += "$" + fmt("%.4f", session.totalCostUsd)
             parts += "${formatTokens(session.totalInputTokens)} in / ${formatTokens(session.totalOutputTokens)} out"
         }
-        session.rateLimit?.let { rl ->
-            rl.resetsAtEpochSec?.let { parts += "resets " + formatCountdown(it) }
-        }
         statusLabel.text = if (parts.isEmpty()) " " else parts.joinToString("  ·  ")
-        statusLabel.toolTipText = session.rateLimit?.let {
-            "Rate-limit window: ${it.type} (${it.status}). The CLI does not expose an exact " +
-                "% of your limit; this shows cumulative usage for this chat plus the window reset."
-        }
+        statusLabel.toolTipText =
+            if (parts.isEmpty()) null else "What this conversation has cost so far"
     }
 
     /** Number formatting pinned to Locale.ROOT so figures don't shift with the IDE locale. */
@@ -560,14 +572,6 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         n >= 1_000_000 -> fmt("%.1fM", n / 1_000_000.0)
         n >= 1_000 -> fmt("%.1fk", n / 1_000.0)
         else -> n.toString()
-    }
-
-    private fun formatCountdown(epochSec: Long): String {
-        val secs = epochSec - System.currentTimeMillis() / 1000
-        if (secs <= 0) return "now"
-        val h = secs / 3600
-        val m = (secs % 3600) / 60
-        return if (h > 0) "in ${h}h${m}m" else "in ${m}m"
     }
 
     /**
