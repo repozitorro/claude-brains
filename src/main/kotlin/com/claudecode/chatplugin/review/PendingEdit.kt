@@ -63,16 +63,13 @@ class PendingEdit private constructor(
          * whole-file diff link instead.
          */
         fun create(edit: FileEdit, file: VirtualFile, document: Document): PendingEdit? {
-            if (!edit.canRevert) return null
-            val before = edit.beforeText ?: return null
-            val after = edit.afterText ?: return null
+            // Reconstruct against the document's own text. Markers will be placed
+            // in this document, so it — not a separately-read disk snapshot — is
+            // what the hunks must describe. If the file has moved on since Claude
+            // wrote it, the reconstruction simply isn't exact and review declines.
+            val after = document.text
+            val before = edit.reconstructBefore(after) ?: return null
             if (before == after) return null
-
-            // Compare against the document rather than the recorded "after": if
-            // the file moved on since (the user typed, a formatter ran), the
-            // recorded text no longer describes this document and the markers
-            // would land on the wrong lines.
-            if (document.text != after) return null
 
             val fragments = ComparisonManager.getInstance()
                 .compareLines(before, after, ComparisonPolicy.DEFAULT, DumbProgressIndicator.INSTANCE)

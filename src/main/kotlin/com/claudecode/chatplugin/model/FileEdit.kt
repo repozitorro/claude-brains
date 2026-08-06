@@ -69,6 +69,22 @@ class FileEdit(
             beforeText = snapshot
             return
         }
+        val reconstructed = reconstructBefore(after, snapshot)
+        beforeText = reconstructed ?: after
+        canRevert = reconstructed != null
+    }
+
+    /**
+     * Reverse-applies the ops to [text], returning the pre-edit content only
+     * when the result is provably exact — otherwise null.
+     *
+     * Exposed so the same reasoning can run against an editor's document rather
+     * than a separately-read disk snapshot: comparing those two for equality was
+     * fragile, and any mismatch (a reload that hadn't landed, a charset quirk)
+     * silently disabled inline review.
+     */
+    fun reconstructBefore(text: String, snapshot: String? = snapshotBefore?.let(::toNewlines)): String? {
+        val after = toNewlines(text)
         var before: String = after
         // Track whether every reversal step was provably unambiguous. A plain
         // forward-replay check is NOT enough on its own: if new_string already
@@ -94,10 +110,7 @@ class FileEdit(
                 }
             }
         }
-        beforeText = before
-        // Revert is offered only when reconstruction was unambiguous AND replaying
-        // the ops forward over `before` exactly reproduces what's on disk.
-        canRevert = unambiguous && applyForward(before) == after
+        return if (unambiguous && applyForward(before) == after) before else null
     }
 
     /** Whatever the file uses; a CRLF majority means the file is CRLF. */

@@ -31,8 +31,9 @@ class PendingEditTest : BasePlatformTestCase() {
     private fun pending(before: String, after: String, vararg ops: Pair<String, String>): PendingEdit {
         val doc = document(after)
         val file = myFixture.configureByText("App.kt", after).virtualFile
-        return PendingEdit.create(edit(before, after, *ops), file, doc)
-            ?: fail("expected a reviewable edit") as Nothing
+        return requireNotNull(PendingEdit.create(edit(before, after, *ops), file, doc)) {
+            "expected a reviewable edit"
+        }
     }
 
     fun testSplitsIntoOneHunkPerChangedRegion() {
@@ -104,15 +105,29 @@ class PendingEditTest : BasePlatformTestCase() {
         assertNull(PendingEdit.create(ambiguous, file, document(after)))
     }
 
-    fun testDocumentThatMovedOnIsNotReviewed() {
-        val before = "a\nb\n"
-        val after = "a\nB\n"
-        val stale = edit(before, after, "b" to "B")
-        val file = myFixture.configureByText("App.kt", after).virtualFile
+    fun testUnrelatedLaterEditsDoNotBlockReview() {
+        // Someone appended a line after Claude's change. Claude's edit still
+        // reconstructs exactly, so it stays reviewable — and only its own lines
+        // are marked up.
+        val e = edit("a\nb\n", "a\nB\n", "b" to "B")
+        val file = myFixture.configureByText("App.kt", "x").virtualFile
+        val moved = document("a\nB\nsomething the user added\n")
 
-        // The user (or a formatter) changed the file after Claude did.
-        val moved = document("a\nB\nsomething else\n")
+        val review = PendingEdit.create(e, file, moved)!!
 
-        assertNull(PendingEdit.create(stale, file, moved))
+        assertEquals(1, review.hunks.size)
+        assertEquals(1, review.hunks.single().startLine())
+
+        review.rejectAll(project)
+        assertEquals("the user's own line must survive", "a\nb\nsomething the user added\n", moved.text)
+    }
+
+    fun testADocumentTheEditNoLongerDescribesIsDeclined() {
+        // The change was undone (or never landed here): reverse-applying finds
+        // nothing to undo, so there is nothing trustworthy to mark up.
+        val e = edit("a\nb\n", "a\nB\n", "b" to "B")
+        val file = myFixture.configureByText("App.kt", "x").virtualFile
+
+        assertNull(PendingEdit.create(e, file, document("a\nb\n")))
     }
 }

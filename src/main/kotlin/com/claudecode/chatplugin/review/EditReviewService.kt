@@ -2,6 +2,7 @@ package com.claudecode.chatplugin.review
 
 import com.claudecode.chatplugin.model.FileEdit
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -23,6 +24,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 class EditReviewService(private val project: Project) : Disposable {
 
     private val pending = LinkedHashMap<VirtualFile, PendingEdit>()
+    private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(EditReviewService::class.java)
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     fun addChangeListener(listener: () -> Unit) {
@@ -45,36 +47,53 @@ class EditReviewService(private val project: Project) : Disposable {
      */
     fun submit(edits: List<FileEdit>): List<FileEdit> {
         val unreviewable = mutableListOf<FileEdit>()
-        val opened = mutableListOf<VirtualFile>()
+        val toOpen = mutableListOf<VirtualFile>()
+        var reviewed = 0
 
         for (edit in edits) {
             val file = LocalFileSystem.getInstance().refreshAndFindFileByPath(edit.filePath)
             if (file == null) {
+                LOG.info("inline review: ${edit.fileName} — not found on disk")
                 unreviewable.add(edit)
                 continue
             }
-            // The CLI wrote this file behind the IDE's back; without reloading,
-            // the document still holds the pre-edit text and every marker would
-            // land on the wrong line.
-            FileDocumentManager.getInstance().reloadFiles(file)
+            // Whether or not it can be marked up, the file was changed and should
+            // be in front of the user.
+            toOpen.add(file)
+
+            // The CLI wrote this file behind the IDE's back, so the document may
+            // still hold the pre-edit text. Refreshing needs a write action.
+            ApplicationManager.getApplication().runWriteAction {
+                file.refresh(false, false)
+                FileDocumentManager.getInstance().reloadFiles(file)
+            }
             val document = FileDocumentManager.getInstance().getDocument(file)
             if (document == null) {
+                LOG.info("inline review: ${edit.fileName} — no document")
                 unreviewable.add(edit)
                 continue
             }
 
             val review = PendingEdit.create(edit, file, document)
             if (review == null) {
+                // Logged with sizes because the usual cause is the document not
+                // holding what the edit describes, and that is invisible from the
+                // message the user sees.
+                LOG.info(
+                    "inline review declined for ${edit.fileName}: " +
+                        "doc=${document.textLength} chars, recorded after=${edit.afterText?.length}, " +
+                        "canRevert=${edit.canRevert}"
+                )
                 unreviewable.add(edit)
                 continue
             }
             pending.remove(file)?.dispose()
             pending[file] = review
-            opened.add(file)
+            reviewed++
         }
 
-        if (opened.isNotEmpty()) openForReview(opened)
-        if (opened.isNotEmpty() || unreviewable.isNotEmpty()) fireChanged()
+        if (toOpen.isNotEmpty()) openForReview(toOpen)
+        if (reviewed > 0 || unreviewable.isNotEmpty()) fireChanged()
         return unreviewable
     }
 
