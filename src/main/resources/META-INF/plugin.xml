@@ -23,6 +23,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.4.3</b>
+        <ul>
+            <li><b>Context window readout</b> — how full the model's context is for
+                this conversation, so it's clear when it is heading for a
+                compaction</li>
+            <li><b>Delete a chat</b> deliberately, with a confirmation that says what
+                is lost. The CLI's own transcript on disk is left alone.</li>
+            <li>Buttons everywhere now take a hand cursor, including the painted
+                Accept / Reject inside a change</li>
+        </ul>
+
         <b>0.4.2</b>
         <ul>
             <li><b>Inline review actually engages now.</b> It had required the
