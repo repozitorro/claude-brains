@@ -20,7 +20,7 @@ import com.intellij.openapi.wm.ToolWindowManager
 class DeleteSessionAction : AnAction(
     "Delete Chat",
     "Delete this conversation",
-    AllIcons.General.Remove
+    AllIcons.Actions.GC
 ) {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
@@ -37,7 +37,35 @@ class DeleteSessionAction : AnAction(
         val session = content.getUserData(ChatToolWindowFactory.SESSION_KEY)
         val name = session?.displayName ?: content.displayName ?: "this chat"
 
-        val confirmed = MessageDialogBuilder
+        if (!confirmDelete(project, name)) return
+
+        // Removing the tab is what deletes the session: the tool window's own
+        // listener does that, so both routes stay in step. The flag stops that
+        // listener asking the same question a second time.
+        isConfirming = true
+        try {
+            toolWindow.contentManager.removeContent(content, true)
+        } finally {
+            isConfirming = false
+        }
+
+        // Never leave the panel with nothing in it.
+        val manager = project.getService(ClaudeSessionManager::class.java)
+        if (manager.sessions.isEmpty()) manager.createSession()
+    }
+
+    private fun toolWindow(project: Project): ToolWindow? =
+        ToolWindowManager.getInstance(project).getToolWindow("Claude Brains")
+
+    companion object {
+
+        /** True while this action is doing the asking, so the tab listener doesn't. */
+        @Volatile
+        var isConfirming: Boolean = false
+            internal set
+
+        /** The one question both delete routes ask, worded the same way. */
+        fun confirmDelete(project: Project, name: String): Boolean = MessageDialogBuilder
             .yesNo("Delete “$name”?", buildString {
                 append("The conversation is removed from Claude Brains and can't be brought back.\n\n")
                 append("Claude Code's own transcript of it, on disk, is left alone — this doesn't ")
@@ -47,17 +75,5 @@ class DeleteSessionAction : AnAction(
             .noText("Keep")
             .icon(AllIcons.General.WarningDialog)
             .ask(project)
-        if (!confirmed) return
-
-        // Removing the tab is what deletes the session: the tool window's own
-        // listener does that, so both routes stay in step.
-        toolWindow.contentManager.removeContent(content, true)
-
-        // Never leave the panel with nothing in it.
-        val manager = project.getService(ClaudeSessionManager::class.java)
-        if (manager.sessions.isEmpty()) manager.createSession()
     }
-
-    private fun toolWindow(project: Project): ToolWindow? =
-        ToolWindowManager.getInstance(project).getToolWindow("Claude Brains")
 }

@@ -1,6 +1,7 @@
 package com.claudecode.chatplugin.ui
 
 import com.claudecode.chatplugin.ClaudeSessionManager
+import com.claudecode.chatplugin.actions.DeleteSessionAction
 import com.claudecode.chatplugin.auth.AuthStatus
 import com.claudecode.chatplugin.auth.ClaudeAuth
 import com.claudecode.chatplugin.model.ClaudeSession
@@ -65,6 +66,20 @@ class ChatToolWindowFactory : ToolWindowFactory {
         }
 
         toolWindow.contentManager.addContentManagerListener(object : ContentManagerListener {
+            /**
+             * Closing a tab discards its conversation, so it asks first — the
+             * same question the trash button asks. Without this, the tab's own
+             * close button was a silent delete.
+             */
+            override fun contentRemoveQuery(event: ContentManagerEvent) {
+                if (project.isDisposed || toolWindow.isDisposed) return
+                val session = event.content.getUserData(SESSION_KEY) ?: return
+                if (DeleteSessionAction.isConfirming) return // the action already asked
+                if (!DeleteSessionAction.confirmDelete(project, session.displayName)) {
+                    event.consume() // keep the tab
+                }
+            }
+
             override fun contentRemoved(event: ContentManagerEvent) {
                 // Only treat this as a real "delete this conversation" when the user
                 // closed the tab — NOT when the tool window is torn down on project

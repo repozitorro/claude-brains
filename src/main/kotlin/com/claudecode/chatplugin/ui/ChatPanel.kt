@@ -118,6 +118,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         border = JBUI.Borders.empty(0, 6)
     }
 
+    /** How full the current limit window is, read at a glance rather than parsed. */
+    private val limitBar = LimitProgressBar()
+
     /**
      * Refreshes the limit readout every minute: the countdown has to tick, and
      * the percentages come from asking the CLI, which is only worth doing while
@@ -226,8 +229,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             add(
                 JPanel(BorderLayout()).apply {
                     isOpaque = false
-                    border = JBUI.Borders.empty(2, 4, 0, 0)
-                    add(limitLabel, BorderLayout.WEST)
+                    border = JBUI.Borders.empty(2, 4, 0, 4)
+                    add(limitLabel, BorderLayout.NORTH)
+                    add(limitBar, BorderLayout.SOUTH)
                 },
                 BorderLayout.SOUTH
             )
@@ -578,6 +582,13 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         limitLabel.isVisible = summary != null
         limitLabel.text = summary ?: " "
         limitLabel.toolTipText = if (summary != null) limitService.explanation() else null
+
+        // The session window is the one that bites first, so that's the one the
+        // bar tracks.
+        val session = limitService.limitBars().firstOrNull { it.shortLabel() == "Session" }
+            ?: limitService.limitBars().firstOrNull()
+        limitBar.percent = session?.percentUsed
+        limitBar.toolTipText = session?.let { "${it.label}: ${it.percentUsed}% used, resets ${it.resetsAt}" }
     }
 
     private fun formatTokens(n: Long): String = when {
