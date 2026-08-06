@@ -23,6 +23,16 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.4.4</b>
+        <ul>
+            <li><b>Accept / Reject sit next to the change</b> they belong to, instead
+                of at the far right of a wide editor</li>
+            <li><b>Deleting a chat always asks first</b> — closing the tab used to
+                discard the conversation silently. The button wears a trash can now.</li>
+            <li>A thin bar under the limits shows how full the session window is,
+                shifting from amber to red as it fills</li>
+        </ul>
+
         <b>0.4.3</b>
         <ul>
             <li><b>Context window readout</b> — how full the model's context is for
