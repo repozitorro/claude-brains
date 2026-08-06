@@ -23,6 +23,32 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.5.0</b>
+        <ul>
+            <li><b>A reply can no longer put live HTML or scripts into the chat
+                panel.</b> Markdown was rendered with raw HTML passed straight
+                through, so anything Claude quoted — a file, a web page, the
+                output of a tool — could introduce working markup into a panel
+                that holds a bridge back into the IDE. It is escaped now.</li>
+            <li><b>Closing a chat stops the turn it was running.</b> The CLI
+                process used to carry on with nowhere left to report to.</li>
+            <li><b>Closed chats are actually released.</b> Every one used to stay
+                in memory for the life of the project, and its usage readout kept
+                ticking once a minute even after the project was closed.</li>
+            <li><b>Usage Statistics opens where the embedded browser is
+                missing</b>, the way the chat itself has since 0.4.5 — it was the
+                one place left that threw instead of falling back.</li>
+            <li>The usage poll can no longer leave stuck <code>claude</code>
+                processes behind. Its timeout could never be reached, so a run
+                that did not return was never cleaned up — once a minute,
+                indefinitely.</li>
+            <li>Under the hood: reading the CLI's protocol is now separate from
+                running it, and covered by replaying a recorded turn, so a change
+                in the CLI shows up as a failing test rather than as a chat that
+                renders nothing. Every build is also checked against the
+                platforms the plugin says it supports.</li>
+        </ul>
+
         <b>0.4.5</b>
         <ul>
             <li><b>Fixes the panel coming up empty on WebStorm 2026.2</b>, where the
