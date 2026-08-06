@@ -81,6 +81,8 @@ class ChatToolWindowFactory : ToolWindowFactory {
                 com.intellij.openapi.actionSystem.ActionManager.getInstance()
                     .getAction("ClaudeCodeChat.NewSession"),
                 com.intellij.openapi.actionSystem.ActionManager.getInstance()
+                    .getAction("ClaudeCodeChat.DeleteSession"),
+                com.intellij.openapi.actionSystem.ActionManager.getInstance()
                     .getAction("ClaudeCodeChat.UsageStats")
             )
         )

@@ -556,6 +556,14 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             parts += "$" + fmt("%.4f", session.totalCostUsd)
             parts += "${formatTokens(session.totalInputTokens)} in / ${formatTokens(session.totalOutputTokens)} out"
         }
+        // How close this conversation is to filling the model's context — the
+        // thing that decides when it has to be compacted or started over.
+        val used = session.contextTokens
+        val window = session.contextWindow
+        if (used != null && window != null && window > 0) {
+            parts += "context ${formatTokens(used)} / ${formatTokens(window)} " +
+                "(${fmt("%.0f", used * 100.0 / window)}%)"
+        }
         statusLabel.text = if (parts.isEmpty()) " " else parts.joinToString("  ·  ")
         statusLabel.toolTipText =
             if (parts.isEmpty()) null else "What this conversation has cost so far"
@@ -805,6 +813,8 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
                     // Accumulate session analytics.
                     session.turnCount++
+                    result.contextTokens?.let { session.contextTokens = it }
+                    result.contextWindow?.let { session.contextWindow = it }
                     result.costUsd?.let { session.totalCostUsd += it }
                     result.inputTokens?.let { session.totalInputTokens += it }
                     result.outputTokens?.let { session.totalOutputTokens += it }

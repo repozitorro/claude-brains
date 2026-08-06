@@ -61,6 +61,13 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         val durationMs: Long?,
         /** Tools the CLI refused to run this turn (from `result.permission_denials`). */
         val permissionDenials: List<String> = emptyList(),
+        /**
+         * How much of the model's context this turn carried, and how much it
+         * holds. Everything the request was built from counts: fresh input plus
+         * whatever was read from or written to the cache.
+         */
+        val contextTokens: Long? = null,
+        val contextWindow: Long? = null,
         /** HTTP status when the turn failed against the API (e.g. 401 for expired auth). */
         val apiErrorStatus: Int? = null,
         /**
@@ -326,6 +333,11 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
                     inputTokens = usage?.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
                     outputTokens = usage?.get("output_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
                     durationMs = json.get("duration_ms")?.takeIf { it.isJsonPrimitive }?.asLong,
+                    contextTokens = usage?.let {
+                        num(it, "input_tokens") + num(it, "cache_read_input_tokens") +
+                            num(it, "cache_creation_input_tokens")
+                    },
+                    contextWindow = parseContextWindow(json.getAsJsonObject("modelUsage")),
                     permissionDenials = parsePermissionDenials(json.getAsJsonArray("permission_denials")),
                     apiErrorStatus = json.get("api_error_status")?.takeIf { it.isJsonPrimitive }?.asInt,
                     errorMessage = if (isError) json.get("result")?.takeIf { it.isJsonPrimitive }?.asString else null
@@ -385,6 +397,24 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
             else -> null
         }
     }
+
+    private fun num(obj: JsonObject, key: String): Long =
+        obj.get(key)?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L
+
+    /**
+     * The context size from `result.modelUsage`, which reports it per model.
+     *
+     * A turn can touch more than one model (a sub-agent on a smaller one, say);
+     * the largest window is the one the conversation itself is bounded by.
+     */
+    private fun parseContextWindow(modelUsage: JsonObject?): Long? =
+        modelUsage?.entrySet()
+            ?.mapNotNull { (_, value) ->
+                value.takeIf { it.isJsonObject }?.asJsonObject
+                    ?.get("contextWindow")?.takeIf { it.isJsonPrimitive }?.asLong
+            }
+            ?.maxOrNull()
+            ?.takeIf { it > 0 }
 
     /** Extracts tool names from the `result.permission_denials` array, defensively. */
     private fun parsePermissionDenials(arr: com.google.gson.JsonArray?): List<String> {

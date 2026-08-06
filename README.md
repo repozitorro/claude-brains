@@ -14,7 +14,10 @@ login your `claude` CLI already has (your Claude Code subscription).
 - **True token-by-token streaming** (uses the CLI's `--include-partial-messages`
   deltas), including muted **reasoning/thinking** shown above the answer
 - **Persistent sessions** — conversations, their `--resume` context, model
-  choice and usage totals survive an IDE restart (stored per project)
+  choice and usage totals survive an IDE restart (stored per project), and can
+  be deleted deliberately, with a confirmation
+- **Context window readout** — how full the model's context is for this
+  conversation, so it's clear when it's heading for a compaction
 - **Tool-activity view** — the files Claude reads/edits and commands it runs
   show up live with result status (`🔧` running, `✓` ok, `✗` failed) and their
   **output collapsed underneath** (failures open by default)

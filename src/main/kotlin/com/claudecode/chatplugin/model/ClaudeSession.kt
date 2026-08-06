@@ -34,6 +34,10 @@ class ClaudeSession(var displayName: String) {
     var totalOutputTokens: Long = 0
     var turnCount: Int = 0
 
+    /** How full the model's context was on the last turn, and how big it is. */
+    var contextTokens: Long? = null
+    var contextWindow: Long? = null
+
     /** Latest rate-limit snapshot from the CLI's `rate_limit_event`, if any. */
     var rateLimit: RateLimit? = null
 
