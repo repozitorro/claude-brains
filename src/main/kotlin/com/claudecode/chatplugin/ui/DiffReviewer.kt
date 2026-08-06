@@ -79,7 +79,10 @@ object DiffReviewer {
         val before = edit.beforeText ?: return false
         val vFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(edit.filePath) ?: return false
         WriteCommandAction.runWriteCommandAction(project, "Revert Claude Edit", null, {
-            VfsUtil.saveText(vFile, before)
+            // Reconstructed text is newline-separated; write it back with the
+            // file's own endings, or reverting a CRLF file would rewrite every
+            // line of it.
+            VfsUtil.saveText(vFile, edit.toFileText(before))
         })
         return true
     }

@@ -18,9 +18,30 @@ class FileEdit(
 ) {
     val ops: MutableList<EditOp> = mutableListOf()
 
-    /** Filled in once the turn completes and the file's final state is known. */
+    /**
+     * Filled in once the turn completes and the file's final state is known.
+     *
+     * Always newline-separated, whatever the file uses on disk — see
+     * [lineSeparator].
+     */
     var beforeText: String? = null
     var afterText: String? = null
+
+    /**
+     * The line ending the file actually uses.
+     *
+     * The CLI sends `old_string` / `new_string` with plain newlines even for a
+     * CRLF file, so matching them against the raw file text never succeeds and
+     * every multi-line edit on Windows looked unreconstructable. The text is
+     * therefore normalised before any matching, and this records what to
+     * restore when writing back.
+     */
+    var lineSeparator: String = "\n"
+        private set
+
+    /** Converts internal newline-separated text back to the file's own endings. */
+    fun toFileText(text: String): String =
+        if (lineSeparator == "\r\n") text.replace("\n", "\r\n") else text
 
     /**
      * True only when replaying [ops] forward over the reconstructed [beforeText]
@@ -40,10 +61,12 @@ class FileEdit(
      * reconstruct [beforeText] by undoing each op in reverse order.
      */
     fun resolve(afterOnDisk: String?) {
-        afterText = afterOnDisk
-        val after = afterOnDisk
+        lineSeparator = detectSeparator(afterOnDisk ?: snapshotBefore)
+        val snapshot = snapshotBefore?.let(::toNewlines)
+        val after = afterOnDisk?.let(::toNewlines)
+        afterText = after
         if (after == null) {
-            beforeText = snapshotBefore
+            beforeText = snapshot
             return
         }
         var before: String = after
@@ -60,7 +83,7 @@ class FileEdit(
             if (content != null) {
                 // A full-file Write discards prior content; the pre-turn state is
                 // only knowable from the snapshot, and earlier ops don't matter.
-                before = snapshotBefore ?: ""
+                before = snapshot ?: ""
                 break
             } else if (oldS != null && newS != null) {
                 if (op.replaceAll) {
@@ -76,6 +99,16 @@ class FileEdit(
         // the ops forward over `before` exactly reproduces what's on disk.
         canRevert = unambiguous && applyForward(before) == after
     }
+
+    /** Whatever the file uses; a CRLF majority means the file is CRLF. */
+    private fun detectSeparator(sample: String?): String {
+        if (sample == null) return LF
+        val crlfCount = sample.split(CRLF).size - 1
+        val newlineCount = sample.count { it == NEWLINE }
+        return if (crlfCount > 0 && crlfCount * 2 >= newlineCount) CRLF else LF
+    }
+
+    private fun toNewlines(text: String): String = text.replace(CRLF, LF)
 
     private fun countOccurrences(haystack: String, needle: String): Int {
         if (needle.isEmpty()) return 0
@@ -103,6 +136,12 @@ class FileEdit(
             }
         }
         return s
+    }
+
+    private companion object {
+        const val NEWLINE = '\n'
+        const val LF = "\n"
+        const val CRLF = "\r\n"
     }
 }
 

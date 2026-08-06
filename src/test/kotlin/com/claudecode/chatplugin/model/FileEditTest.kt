@@ -84,6 +84,48 @@ class FileEditTest {
     }
 
     @Test
+    fun `a CRLF file edited with newline-separated ops is still reconstructable`() {
+        // The real-world case this guards: Windows projects are CRLF, but the
+        // CLI always sends old_string / new_string with plain newlines. Matching
+        // them against the raw file text never succeeds, which silently turned
+        // off both inline review and revert for practically every Windows file.
+        // What the CLI left on disk: CRLF throughout, comment added.
+        val afterOnDisk = "class A {\r\n  /** does b */\r\n  fun b() {}\r\n}\r\n"
+        // What the CLI reported doing: the same edit, with plain newlines.
+        val e = FileEdit("a.kt", "Edit", null).apply {
+            ops.add(EditOp("fun b()", "/** does b */\n  fun b()", null, false))
+        }
+
+        e.resolve(afterOnDisk)
+
+        assertTrue("a CRLF file must not disable review", e.canRevert)
+        assertEquals("class A {\n  fun b() {}\n}\n", e.beforeText)
+        assertEquals("\r\n", e.lineSeparator)
+    }
+
+    @Test
+    fun `reverting a CRLF file writes CRLF back`() {
+        val e = FileEdit("a.kt", "Edit", null).apply {
+            ops.add(EditOp("old", "new", null, false))
+        }
+        e.resolve("a\r\nnew\r\nb\r\n")
+
+        // Writing the internal text as-is would rewrite every line of the file.
+        assertEquals("a\r\nold\r\nb\r\n", e.toFileText(e.beforeText!!))
+    }
+
+    @Test
+    fun `a newline-separated file is left alone`() {
+        val e = FileEdit("a.kt", "Edit", null).apply {
+            ops.add(EditOp("old", "new", null, false))
+        }
+        e.resolve("a\nnew\nb\n")
+
+        assertEquals("\n", e.lineSeparator)
+        assertEquals("a\nold\nb\n", e.toFileText(e.beforeText!!))
+    }
+
+    @Test
     fun `missing after content falls back to snapshot and is not revertible`() {
         val e = edit("a.kt", "a", "b", snapshot = "snap")
         e.resolve(null)
