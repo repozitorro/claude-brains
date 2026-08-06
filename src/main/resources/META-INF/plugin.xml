@@ -23,6 +23,18 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.4.1</b>
+        <ul>
+            <li><b>Real usage percentages</b>, refreshed every minute — session and
+                week, taken from the CLI's own <code>/usage</code> report, beside the
+                reset countdown. Costs nothing and pauses while the panel is hidden.</li>
+            <li><b>Inline review and revert now work on CRLF files.</b> The CLI
+                reports its edits with plain newlines even when the file uses CRLF,
+                so on Windows projects nothing matched and both features silently
+                declined to run. Reverting also keeps the file's own line endings
+                instead of rewriting every line.</li>
+        </ul>
+
         <b>0.4.0</b>
         <ul>
             <li><b>Review Claude's edits in the file.</b> When a turn ends the
