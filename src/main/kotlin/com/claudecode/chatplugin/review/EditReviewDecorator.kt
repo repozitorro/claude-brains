@@ -48,17 +48,41 @@ class EditReviewDecorator(
 
     private val mouseListener = object : EditorMouseListener {
         override fun mouseClicked(event: EditorMouseEvent) {
-            val point = event.mouseEvent.point
-            val inlay = editor.inlayModel.getElementAt(point) ?: return
-            val renderer = renderers[inlay] ?: return
-            val bounds = inlay.bounds ?: return
-            val local = java.awt.Point(point.x - bounds.x, point.y - bounds.y)
-            when (renderer.hitTest(local)) {
-                RemovedLinesRenderer.Action.ACCEPT -> { service.accept(file, renderer.hunk); event.consume() }
-                RemovedLinesRenderer.Action.REJECT -> { service.reject(file, renderer.hunk); event.consume() }
-                null -> Unit
+            val (renderer, action) = hitTestButton(event.mouseEvent.point) ?: return
+            when (action) {
+                RemovedLinesRenderer.Action.ACCEPT -> service.accept(file, renderer.hunk)
+                RemovedLinesRenderer.Action.REJECT -> service.reject(file, renderer.hunk)
             }
+            event.consume()
         }
+    }
+
+    /**
+     * The Accept / Reject labels are painted, not real components, so nothing
+     * would tell the user they can be clicked. This turns the caret into a hand
+     * over them, the way it behaves over any other button.
+     */
+    private val motionListener = object : com.intellij.openapi.editor.event.EditorMouseMotionListener {
+        override fun mouseMoved(event: EditorMouseEvent) {
+            val overButton = hitTestButton(event.mouseEvent.point) != null
+            if (overButton == cursorIsHand) return
+            cursorIsHand = overButton
+            (editor as? com.intellij.openapi.editor.ex.EditorEx)?.setCustomCursor(
+                this@EditReviewDecorator,
+                if (overButton) java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR) else null
+            )
+        }
+    }
+
+    private var cursorIsHand = false
+
+    /** Which action, if any, sits under [point]. Shared by the click and hover paths. */
+    private fun hitTestButton(point: java.awt.Point): Pair<RemovedLinesRenderer, RemovedLinesRenderer.Action>? {
+        val inlay = editor.inlayModel.getElementAt(point) ?: return null
+        val renderer = renderers[inlay] ?: return null
+        val bounds = inlay.bounds ?: return null
+        val local = java.awt.Point(point.x - bounds.x, point.y - bounds.y)
+        return renderer.hitTest(local)?.let { renderer to it }
     }
 
     private var toolbar: ReviewFloatingToolbar? = null
@@ -66,6 +90,7 @@ class EditReviewDecorator(
     fun attach() {
         val review = service.editFor(file) ?: return
         editor.addEditorMouseListener(mouseListener)
+        editor.addEditorMouseMotionListener(motionListener)
 
         review.pendingHunks.forEach { hunk ->
             if (!hunk.isAlive) return@forEach
@@ -80,6 +105,12 @@ class EditReviewDecorator(
         toolbar?.detach()
         toolbar = null
         editor.removeEditorMouseListener(mouseListener)
+        editor.removeEditorMouseMotionListener(motionListener)
+        if (cursorIsHand) {
+            // Leave the caret as we found it, or the editor keeps the hand.
+            (editor as? com.intellij.openapi.editor.ex.EditorEx)?.setCustomCursor(this, null)
+            cursorIsHand = false
+        }
         highlighters.forEach { runCatching { editor.markupModel.removeHighlighter(it) } }
         highlighters.clear()
         inlays.forEach { runCatching { it.dispose() } }
