@@ -27,6 +27,11 @@ class ChatToolWindowFactory : ToolWindowFactory {
             val panel = ChatPanel(project, session)
             val content = contentFactory.createContent(panel, session.displayName, false)
             content.isCloseable = true
+            // The content's own disposer runs both when the tab is closed and
+            // when the content manager is torn down at project close — the case
+            // `contentRemoved` deliberately steps out of, and therefore the case
+            // that used to leave the panel's timers and browser running.
+            content.setDisposer(panel)
             content.putUserData(SESSION_KEY, session)
             toolWindow.contentManager.addContent(content)
             toolWindow.contentManager.setSelectedContent(content)
@@ -84,8 +89,8 @@ class ChatToolWindowFactory : ToolWindowFactory {
                 // Only treat this as a real "delete this conversation" when the user
                 // closed the tab — NOT when the tool window is torn down on project
                 // close, which would otherwise wipe the persisted sessions.
+                // Releasing the panel is the content disposer's job either way.
                 if (project.isDisposed || toolWindow.isDisposed) return
-                (event.content.component as? ChatPanel)?.dispose()
                 event.content.getUserData(SESSION_KEY)?.let { sessionManager.closeSession(it) }
             }
         })
@@ -102,7 +107,7 @@ class ChatToolWindowFactory : ToolWindowFactory {
             )
         )
 
-        sessionManager.addChangeListener {
+        sessionManager.addChangeListener(toolWindow.disposable) {
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
                 val existingSessions = toolWindow.contentManager.contents
                     .mapNotNull { it.getUserData(SESSION_KEY) }

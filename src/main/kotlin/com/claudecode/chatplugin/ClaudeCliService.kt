@@ -463,21 +463,18 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
      * this only surfaces what's configured, so the plugin never rewrites the
      * user's MCP configuration behind their back. Blocking; call off the EDT.
      */
-    fun listMcpServers(): String = try {
-        val process = ProcessBuilder(listOf(settings.claudeCommand, "mcp", "list"))
-            .apply { project.basePath?.let { directory(java.io.File(it)) } }
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader(Charsets.UTF_8).readText()
-        if (!process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)) {
-            process.destroy()
-            "Timed out waiting for '${settings.claudeCommand} mcp list'."
-        } else {
-            output.trim().ifEmpty { "No output from '${settings.claudeCommand} mcp list'." }
+    fun listMcpServers(): String {
+        val command = settings.claudeCommand
+        val result = com.claudecode.chatplugin.cli.CliRunner.run(
+            command = listOf(command, "mcp", "list"),
+            workingDir = project.basePath?.let { java.io.File(it) },
+            timeoutSeconds = MCP_LIST_TIMEOUT_SECONDS
+        )
+        return when {
+            result.failure != null -> "Could not run '$command mcp list': ${result.failure.message}"
+            result.timedOut -> "Timed out waiting for '$command mcp list'."
+            else -> result.output.ifEmpty { "No output from '$command mcp list'." }
         }
-    } catch (e: Exception) {
-        log.warn("claude mcp list failed", e)
-        "Could not run '${settings.claudeCommand} mcp list': ${e.message}"
     }
 
     fun openSettings() {
@@ -497,5 +494,7 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
 
         /** Tool output beyond this is clamped before it reaches the chat. */
         internal const val MAX_TOOL_OUTPUT = 2000
+
+        private const val MCP_LIST_TIMEOUT_SECONDS = 30L
     }
 }

@@ -25,7 +25,17 @@ import org.commonmark.renderer.html.HtmlRenderer
 object MessageRenderer {
 
     private val parser: Parser = Parser.builder().build()
-    private val renderer: HtmlRenderer = HtmlRenderer.builder().build()
+
+    /**
+     * `escapeHtml(true)` is load-bearing, not cosmetic: CommonMark passes raw
+     * HTML through by default, and this fragment is written straight into the
+     * embedded browser's DOM via `innerHTML`. A reply that quotes a file, a web
+     * page or tool output containing `<script>` or `onerror=` would otherwise
+     * execute inside a page that holds a bridge back into the IDE
+     * (`window.cbLink` → diff/revert). None of the plugin's own markup goes
+     * through here — it is assembled around [md], not by it.
+     */
+    private val renderer: HtmlRenderer = HtmlRenderer.builder().escapeHtml(true).build()
 
     private fun md(markdown: String): String = renderer.render(parser.parse(markdown) as Node)
 

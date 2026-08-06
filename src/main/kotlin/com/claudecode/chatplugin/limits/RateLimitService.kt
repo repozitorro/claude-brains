@@ -2,9 +2,11 @@ package com.claudecode.chatplugin.limits
 
 import com.claudecode.chatplugin.stats.UsageStats
 import com.claudecode.chatplugin.stats.UsageStatsReader
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
@@ -61,11 +63,27 @@ class RateLimitService(private val project: Project) {
         }
     }
 
-    fun addChangeListener(listener: () -> Unit) {
+    /**
+     * Subscribes for as long as [parent] lives.
+     *
+     * The owner is mandatory because this service outlives its listeners: it is
+     * a project service, while the panels that listen come and go with every
+     * tab. Without unsubscribing, each closed tab left a live closure holding
+     * the whole panel, and the list grew for the lifetime of the project.
+     */
+    fun addChangeListener(parent: Disposable, listener: () -> Unit) {
         listeners.add(listener)
+        Disposer.register(parent, Disposable { listeners.remove(listener) })
     }
 
     private fun fireChanged() = listeners.forEach { runCatching { it() } }
+
+    /**
+     * Live subscriptions. Exposed for tests: a listener that is never removed
+     * costs nothing visible — it just quietly keeps its owner alive — so the
+     * only way to catch a regression is to count.
+     */
+    internal val listenerCount: Int get() = listeners.size
 
     /** Latest snapshot per window type, newest report wins. */
     fun windows(): List<RateLimitWindow> = synchronized(windows) { windows.values.toList() }

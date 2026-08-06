@@ -36,7 +36,7 @@ class EditReviewDecorations(private val project: Project) : Disposable {
 
         // Any accept/reject changes what should be drawn everywhere, so redraw
         // the lot rather than trying to work out which editors were affected.
-        EditReviewService.getInstance(project).addChangeListener {
+        EditReviewService.getInstance(project).addChangeListener(this) {
             ApplicationManager.getApplication().invokeLater {
                 if (!project.isDisposed) refreshAll()
             }

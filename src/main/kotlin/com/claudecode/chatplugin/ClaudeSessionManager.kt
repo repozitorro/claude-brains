@@ -3,11 +3,13 @@ package com.claudecode.chatplugin
 import com.claudecode.chatplugin.model.ChatMessage
 import com.claudecode.chatplugin.model.ClaudeSession
 import com.claudecode.chatplugin.model.Role
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -30,8 +32,10 @@ class ClaudeSessionManager(private val project: Project) :
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
-    fun addChangeListener(listener: () -> Unit) {
+    /** Subscribes for as long as [parent] lives — see `RateLimitService.addChangeListener`. */
+    fun addChangeListener(parent: Disposable, listener: () -> Unit) {
         listeners.add(listener)
+        Disposer.register(parent, Disposable { listeners.remove(listener) })
     }
 
     private fun fireChanged() = listeners.forEach { it() }

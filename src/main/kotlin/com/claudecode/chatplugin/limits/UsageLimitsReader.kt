@@ -1,10 +1,10 @@
 package com.claudecode.chatplugin.limits
 
 import com.claudecode.chatplugin.ClaudeCodeSettings
+import com.claudecode.chatplugin.cli.CliRunner
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Asks the CLI for its usage report by piping `/usage` into it.
@@ -23,26 +23,22 @@ object UsageLimitsReader {
 
     fun read(project: Project): List<LimitBar> {
         val command = ClaudeCodeSettings.getInstance(project).claudeCommand
-        return try {
-            val process = ProcessBuilder(listOf(command))
-                .apply { project.basePath?.let { directory(File(it)) } }
-                .redirectErrorStream(true)
-                .start()
+        val result = CliRunner.run(
+            command = listOf(command),
+            workingDir = project.basePath?.let { File(it) },
+            timeoutSeconds = TIMEOUT_SECONDS,
+            stdin = "/usage\n"
+        )
+        if (result.failure != null) {
+            log.warn("Could not read the usage report: ${result.failure.message}")
+            return emptyList()
+        }
+        // A timeout is not fatal here: the report is printed before the session
+        // would end, so parse whatever arrived rather than discarding it.
+        if (result.timedOut) log.info("`$command` did not exit within ${TIMEOUT_SECONDS}s; using what it printed")
 
-            process.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write("/usage\n") }
-            val output = process.inputStream.bufferedReader(Charsets.UTF_8).readText()
-
-            if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                process.destroy()
-                log.info("`$command` did not return a usage report in ${TIMEOUT_SECONDS}s")
-                return emptyList()
-            }
-            UsageLimits.parse(output).also {
-                if (it.isEmpty()) log.info("No usage percentages recognised in the CLI's report")
-            }
-        } catch (e: Exception) {
-            log.warn("Could not read the usage report", e)
-            emptyList()
+        return UsageLimits.parse(result.output).also {
+            if (it.isEmpty()) log.info("No usage percentages recognised in the CLI's report")
         }
     }
 

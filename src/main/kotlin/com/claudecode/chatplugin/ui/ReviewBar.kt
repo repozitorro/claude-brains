@@ -2,6 +2,7 @@ package com.claudecode.chatplugin.ui
 
 import com.claudecode.chatplugin.review.EditReviewService
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.util.ui.JBUI
@@ -18,7 +19,7 @@ import javax.swing.JPanel
  * act on — so accepting a change in a file updates the count here, and Accept
  * all clears the markers in every open editor.
  */
-class ReviewBar(private val project: Project) : JPanel(BorderLayout()) {
+class ReviewBar(private val project: Project) : JPanel(BorderLayout()), Disposable {
 
     private val service = EditReviewService.getInstance(project)
 
@@ -51,11 +52,14 @@ class ReviewBar(private val project: Project) : JPanel(BorderLayout()) {
 
         HandCursors.applyTo(this)
 
-        service.addChangeListener {
+        service.addChangeListener(this) {
             ApplicationManager.getApplication().invokeLater { if (!project.isDisposed) refresh() }
         }
         refresh()
     }
+
+    /** Nothing of its own to release; being [Disposable] is what unsubscribes it. */
+    override fun dispose() = Unit
 
     fun refresh() {
         val hunks = service.pendingHunkCount

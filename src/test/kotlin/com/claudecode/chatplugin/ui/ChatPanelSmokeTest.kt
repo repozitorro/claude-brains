@@ -1,6 +1,8 @@
 package com.claudecode.chatplugin.ui
 
 import com.claudecode.chatplugin.ClaudeSessionManager
+import com.claudecode.chatplugin.limits.RateLimitService
+import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 /**
@@ -27,7 +29,27 @@ class ChatPanelSmokeTest : BasePlatformTestCase() {
         val panel = ChatPanel(project, session)
 
         assertTrue("panel should have laid out its children", panel.componentCount > 0)
-        panel.dispose()
+        Disposer.dispose(panel)
+    }
+
+    /**
+     * Panels come and go with every tab; the services they subscribe to live as
+     * long as the project. Each closed tab used to leave its closure behind,
+     * holding the whole panel — invisible until the IDE was restarted.
+     */
+    fun testDisposingAPanelUnsubscribesItFromTheServices() {
+        val manager = project.getService(ClaudeSessionManager::class.java)
+        val limits = RateLimitService.getInstance(project)
+        val before = limits.listenerCount
+
+        val panels = (1..3).map { ChatPanel(project, manager.createSession("Leak $it")) }
+        assertEquals("each panel should subscribe once", before + 3, limits.listenerCount)
+
+        // Disposed through the Disposer, which is how the tool window's content
+        // releases a tab — the path that also has to release the panel's children.
+        panels.forEach { Disposer.dispose(it) }
+
+        assertEquals("nothing should be left subscribed", before, limits.listenerCount)
     }
 
     fun testSignInScreenBuildsForEveryAuthState() {
@@ -51,6 +73,6 @@ class ChatPanelSmokeTest : BasePlatformTestCase() {
         val panel = ChatPanel(project, session)
 
         assertTrue(panel.componentCount > 0)
-        panel.dispose()
+        Disposer.dispose(panel)
     }
 }
