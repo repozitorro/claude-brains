@@ -23,6 +23,20 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.4.0</b>
+        <ul>
+            <li><b>Review Claude's edits in the file.</b> When a turn ends the
+                changed files open with new lines highlighted, the lines they
+                replaced shown in red above them, and <b>Accept / Reject on each
+                change</b> — in the gutter and inline. A bar above the prompt
+                counts what's left and offers <b>Accept all / Reject all</b>.
+                Rejecting is an ordinary undoable edit.</li>
+            <li><b>Rate-limit readout</b>: which window you are in, a ticking
+                countdown to its reset, and the tokens spent inside it. Claude
+                Code never publishes a remaining quota, so this shows real
+                consumption rather than an invented percentage.</li>
+        </ul>
+
         <b>0.3.5</b>
         <ul>
             <li>Pasting a screenshot into the prompt, properly this time. The
