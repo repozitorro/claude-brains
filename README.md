@@ -33,9 +33,11 @@ login your `claude` CLI already has (your Claude Code subscription).
   **Revert This Edit** button.
 - **Inline review, in the file itself** — when a turn ends, the files Claude
   edited open with the new lines highlighted, the lines they replaced drawn in
-  red directly above, and **Accept / Reject on each change** (in the gutter and
-  inline). A bar above the prompt counts what's left and offers **Accept all /
-  Reject all**. Rejecting is an ordinary undoable edit, so Ctrl+Z works.
+  red directly above, and **Accept / Reject at the right edge of each change**.
+  A strip floats over the bottom of the editor to **step between changes** and
+  take the **whole file** at once, and a bar above the prompt offers **Accept all
+  / Reject all** across files. Rejecting is an ordinary undoable edit, so Ctrl+Z
+  works.
 - **`@` file references** — type `@` in the prompt to autocomplete a project
   file path; "Reference This File in Chat" does the same from the editor, so
   Claude reads the file itself instead of you pasting (and paying for) it

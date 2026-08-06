@@ -122,6 +122,35 @@ class PendingEditTest : BasePlatformTestCase() {
         assertEquals("the user's own line must survive", "a\nb\nsomething the user added\n", moved.text)
     }
 
+    fun testAcceptingOrRejectingTheWholeFileClearsIt() {
+        // What the floating toolbar's two buttons do.
+        val before = "a\nb\nc\nd\n"
+        val after = "a\nB\nc\nD\n"
+
+        val accepted = pending(before, after, "b" to "B", "d" to "D")
+        accepted.acceptAll()
+        assertTrue(accepted.isFinished)
+        assertEquals(after, accepted.document.text)
+
+        val rejected = pending(before, after, "b" to "B", "d" to "D")
+        rejected.rejectAll(project)
+        assertTrue(rejected.isFinished)
+        assertEquals(before, rejected.document.text)
+    }
+
+    fun testHunksAreOrderedForStepThroughNavigation() {
+        // The toolbar's next/previous buttons walk these in line order.
+        val review = pending(
+            "a\nb\nc\nd\ne\nf\n",
+            "a\nB\nc\nD\ne\nF\n",
+            "b" to "B", "d" to "D", "f" to "F"
+        )
+
+        val lines = review.pendingHunks.map { it.startLine() }
+        assertEquals(listOf(1, 3, 5), lines.sorted())
+        assertEquals(3, review.pendingHunks.size)
+    }
+
     fun testADocumentTheEditNoLongerDescribesIsDeclined() {
         // The change was undone (or never landed here): reverse-applying finds
         // nothing to undo, so there is nothing trustworthy to mark up.

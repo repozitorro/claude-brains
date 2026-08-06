@@ -18,19 +18,21 @@ import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.editor.markup.TextAttributes
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.util.ui.JBUI
 import java.awt.Graphics
 import java.awt.Rectangle
 import javax.swing.Icon
 
 /**
  * Draws one file's pending changes into an open editor: the new lines
- * highlighted, the lines they replaced shown in red directly above, and an
- * Accept / Reject control on every change.
+ * highlighted, the lines they replaced shown in red directly above, and
+ * Accept / Reject at the right edge of each change — plus a strip floating over
+ * the bottom of the editor for stepping between changes and deciding the file
+ * as a whole.
  *
- * The actions appear twice on purpose — as labels inside the inlay, which is
- * the shape the user asked for, and as a gutter icon, which uses the platform's
- * own click handling. If the inlay hit-testing is off by a few pixels the
- * change is still reviewable.
+ * Per-change actions appear twice on purpose: as buttons in the inlay, and in
+ * the gutter icon's menu, which uses the platform's own click handling. If the
+ * inlay hit-testing is off by a few pixels the change is still reviewable.
  */
 class EditReviewDecorator(
     private val project: Project,
@@ -59,6 +61,8 @@ class EditReviewDecorator(
         }
     }
 
+    private var toolbar: ReviewFloatingToolbar? = null
+
     fun attach() {
         val review = service.editFor(file) ?: return
         editor.addEditorMouseListener(mouseListener)
@@ -68,9 +72,13 @@ class EditReviewDecorator(
             addLineHighlight(hunk)
             addRemovedLinesInlay(hunk)
         }
+
+        toolbar = ReviewFloatingToolbar(project, editor, file).also { it.attach() }
     }
 
     fun detach() {
+        toolbar?.detach()
+        toolbar = null
         editor.removeEditorMouseListener(mouseListener)
         highlighters.forEach { runCatching { editor.markupModel.removeHighlighter(it) } }
         highlighters.clear()
@@ -153,48 +161,56 @@ class EditReviewDecorator(
 
         override fun calcWidthInPixels(inlay: Inlay<*>): Int = editor.component.width
 
-        override fun calcHeightInPixels(inlay: Inlay<*>): Int = lineHeight() * (lines.size + 1)
+        /** A pure insertion has no removed lines, but still needs a row for its buttons. */
+        override fun calcHeightInPixels(inlay: Inlay<*>): Int = lineHeight() * maxOf(lines.size, 1)
 
         override fun paint(inlay: Inlay<*>, g: Graphics, target: Rectangle, attributes: TextAttributes) {
             val lh = lineHeight()
-            val metrics = g.getFontMetrics(editor.colorsScheme.getFont(com.intellij.openapi.editor.colors.EditorFontType.PLAIN))
-            g.font = editor.colorsScheme.getFont(com.intellij.openapi.editor.colors.EditorFontType.PLAIN)
+            val font = editor.colorsScheme.getFont(com.intellij.openapi.editor.colors.EditorFontType.PLAIN)
+            val metrics = g.getFontMetrics(font)
+            g.font = font
 
-            // Removed lines, on the deletion colour the IDE uses in its own diffs.
             val removedBg = TextDiffType.DELETED.getColor(editor)
-            lines.forEachIndexed { i, line ->
-                val y = target.y + i * lh
-                g.color = removedBg
-                g.fillRect(target.x, y, target.width, lh)
-                g.color = editor.colorsScheme.defaultForeground
-                g.drawString(line, target.x + 4, y + metrics.ascent)
+            if (lines.isEmpty()) {
+                // Nothing was removed; keep the row subtle so it reads as a
+                // control strip rather than as deleted code.
+                g.color = editor.colorsScheme.defaultBackground
+                g.fillRect(target.x, target.y, target.width, lh)
+            } else {
+                lines.forEachIndexed { i, line ->
+                    val y = target.y + i * lh
+                    g.color = removedBg
+                    g.fillRect(target.x, y, target.width, lh)
+                    g.color = editor.colorsScheme.defaultForeground
+                    g.drawString(line, target.x + 4, y + metrics.ascent)
+                }
             }
 
-            // Action row underneath the removed text.
-            val rowY = target.y + lines.size * lh
-            g.color = editor.colorsScheme.defaultBackground
-            g.fillRect(target.x, rowY, target.width, lh)
+            // Buttons sit at the right edge of the change's first row, out of the
+            // way of the code itself.
+            val accept = "Accept"
+            val reject = "Reject"
+            val padding = 8
+            val gap = 4
+            val aw = metrics.stringWidth(accept) + padding * 2
+            val rw = metrics.stringWidth(reject) + padding * 2
+            val h = lh - 4
+            val rx = target.x + target.width - rw - 12
+            val ax = rx - gap - aw
+            val y = target.y + 2
 
-            val accept = "✓ Accept"
-            val reject = "✗ Reject"
-            val gap = 16
-            val ax = target.x + 4
-            val aw = metrics.stringWidth(accept)
-            val rx = ax + aw + gap
-            val rw = metrics.stringWidth(reject)
-
-            g.color = TextDiffType.INSERTED.getColor(editor)
-            g.fillRect(ax - 3, rowY + 2, aw + 6, lh - 4)
+            g.color = JBUI.CurrentTheme.Focus.focusColor()
+            g.fillRect(ax, y, aw, h)
             g.color = removedBg
-            g.fillRect(rx - 3, rowY + 2, rw + 6, lh - 4)
+            g.fillRect(rx, y, rw, h)
 
             g.color = editor.colorsScheme.defaultForeground
-            g.drawString(accept, ax, rowY + metrics.ascent)
-            g.drawString(reject, rx, rowY + metrics.ascent)
+            g.drawString(accept, ax + padding, y + metrics.ascent - 2)
+            g.drawString(reject, rx + padding, y + metrics.ascent - 2)
 
             // Local coordinates, so a click can be resolved without repainting.
-            acceptBounds = Rectangle(ax - 3 - target.x, rowY + 2 - target.y, aw + 6, lh - 4)
-            rejectBounds = Rectangle(rx - 3 - target.x, rowY + 2 - target.y, rw + 6, lh - 4)
+            acceptBounds = Rectangle(ax - target.x, y - target.y, aw, h)
+            rejectBounds = Rectangle(rx - target.x, y - target.y, rw, h)
         }
 
         fun hitTest(local: java.awt.Point): Action? = when {
