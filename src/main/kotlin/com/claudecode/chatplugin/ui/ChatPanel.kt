@@ -111,6 +111,15 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
     private val composer = ComposerPanel(JBUI.CurrentTheme.Focus.focusColor())
 
+    private val reviewService = com.claudecode.chatplugin.review.EditReviewService.getInstance(project).also {
+        // Touch the decorations service so it starts listening for editors; it
+        // does the drawing, and nothing else would instantiate it.
+        com.claudecode.chatplugin.review.EditReviewDecorations.getInstance(project)
+    }
+
+    /** Accept all / Reject all for the changes Claude has made but you haven't reviewed. */
+    private val reviewBar = ReviewBar(project)
+
     /**
      * Shown when a turn comes back 401.
      *
@@ -213,6 +222,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         val composerWrapper = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.empty(4, 6, 6, 6)
             isOpaque = false
+            // Review controls sit directly above the prompt: that's where you
+            // are when you decide whether to keep what Claude just did.
+            add(reviewBar, BorderLayout.NORTH)
             add(composer, BorderLayout.CENTER)
         }
 
@@ -719,6 +731,20 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                         edit.resolve(after)
                     }
                     repaintNow()
+
+                    // Hand the edits to inline review: this opens the files and
+                    // marks each change up for accept/reject in the editor.
+                    if (assistantMessage.edits.isNotEmpty()) {
+                        val notReviewable = reviewService.submit(assistantMessage.edits)
+                        if (notReviewable.isNotEmpty()) {
+                            addSystemBubble(
+                                "Couldn't mark up ${notReviewable.joinToString { it.fileName }} for inline " +
+                                    "review — the pre-edit content can't be reconstructed exactly, so accepting " +
+                                    "or rejecting line by line would be guesswork. Use the **diff** link above " +
+                                    "to review the whole file instead."
+                            )
+                        }
+                    }
 
                     // Accumulate session analytics.
                     session.turnCount++

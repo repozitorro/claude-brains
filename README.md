@@ -31,6 +31,11 @@ login your `claude` CLI already has (your Claude Code subscription).
   offered when that reconstruction is provably exact. Turns that touched several
   files also get a **revert all** link, and the diff window carries its own
   **Revert This Edit** button.
+- **Inline review, in the file itself** — when a turn ends, the files Claude
+  edited open with the new lines highlighted, the lines they replaced drawn in
+  red directly above, and **Accept / Reject on each change** (in the gutter and
+  inline). A bar above the prompt counts what's left and offers **Accept all /
+  Reject all**. Rejecting is an ordinary undoable edit, so Ctrl+Z works.
 - **`@` file references** — type `@` in the prompt to autocomplete a project
   file path; "Reference This File in Chat" does the same from the editor, so
   Claude reads the file itself instead of you pasting (and paying for) it
@@ -176,6 +181,13 @@ src/test/kotlin/.../ui/MessageRendererTest.kt    # rendered fragments + diff/rev
     ImageAttachments.kt        # clipboard screenshot -> temp PNG for path-based image input
     TranscriptExporter.kt      # conversation -> Markdown (copy / export)
     DiffReviewer.kt            # opens IntelliJ's diff viewer; reverts an edit
+    ReviewBar.kt               # Accept all / Reject all above the prompt
+  review/
+    Hunk.kt                    # one reviewable change, tracked by a RangeMarker
+    PendingEdit.kt             # a file's changes, split into hunks by the platform diff
+    EditReviewService.kt       # what's still unreviewed; accept/reject at every scope
+    EditReviewDecorator.kt     # editor highlighting, red removed-lines inlay, controls
+    EditReviewDecorations.kt   # keeps open editors decorated as they come and go
     ClaudeBrainsConfigurable.kt # Settings > Tools > Claude Brains page
     SlashCommands.kt           # autocomplete list
 src/main/resources/webview/    # chat.html shell + highlight.min.js + hljs themes (bundled)

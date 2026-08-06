@@ -147,6 +147,16 @@
                 text="Claude Brains: Usage Statistics"
                 description="Token usage by project, branch and model"/>
 
+        <action id="ClaudeCodeChat.AcceptAllChanges"
+                class="com.claudecode.chatplugin.actions.AcceptAllChangesAction"
+                text="Accept All Claude Changes"
+                description="Keep every change Claude made in this project"/>
+
+        <action id="ClaudeCodeChat.RejectAllChanges"
+                class="com.claudecode.chatplugin.actions.RejectAllChangesAction"
+                text="Reject All Claude Changes"
+                description="Restore every file Claude changed to how it was before"/>
+
         <action id="ClaudeCodeChat.NewSession"
                 class="com.claudecode.chatplugin.actions.NewSessionAction"
                 text="Claude Code: New Chat Session"
