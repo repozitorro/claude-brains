@@ -753,7 +753,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         fun repaint() = scheduleRender(assistantIndex, assistantMessage)
         fun repaintNow() = renderNow(assistantIndex, assistantMessage)
 
-        cliService.sendPrompt(session, prompt, object : ClaudeCliService.StreamListener {
+        cliService.sendPrompt(session, prompt, object : com.claudecode.chatplugin.cli.StreamListener {
             override fun onTextChunk(chunk: String) {
                 ApplicationManager.getApplication().invokeLater {
                     assistantMessage.text += chunk
@@ -832,7 +832,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 }
             }
 
-            override fun onComplete(result: ClaudeCliService.TurnResult) {
+            override fun onComplete(result: com.claudecode.chatplugin.cli.TurnResult) {
                 ApplicationManager.getApplication().invokeLater {
                     assistantMessage.isStreaming = false
                     if (result.isError) {
