@@ -47,7 +47,9 @@ login your `claude` CLI already has (your Claude Code subscription).
 - **Clear failure messages** — a failed turn shows the CLI's actual reason, and
   an expired login tells you to re-authenticate instead of showing a blank reply
 - **Usage analytics** — cumulative cost + input/output tokens per session, plus
-  the current rate-limit window's reset countdown
+  a live rate-limit readout: which window you are in, a ticking countdown to its
+  reset, and the tokens spent inside it. Claude Code never publishes a remaining
+  quota, so consumption is shown rather than an invented "N% left"
 - **Settings page** (Settings → Tools → Claude Brains): CLI path, default model,
   **permission mode** (`default` / `acceptEdits` / `plan` / `bypassPermissions`),
   allowed/disallowed tools

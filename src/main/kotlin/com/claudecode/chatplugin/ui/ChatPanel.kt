@@ -109,6 +109,18 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         border = JBUI.Borders.empty(0, 6)
     }
 
+    private val limitService = com.claudecode.chatplugin.limits.RateLimitService.getInstance(project)
+
+    /** Window type, reset countdown and what's been spent inside it. */
+    private val limitLabel = JLabel(" ").apply {
+        font = font.deriveFont(10f)
+        foreground = JBUI.CurrentTheme.Label.disabledForeground()
+        border = JBUI.Borders.empty(0, 6)
+    }
+
+    /** The reset time is a countdown, so it has to tick rather than be set once. */
+    private val limitTicker = Timer(LIMIT_TICK_MS) { updateLimitLabel() }.apply { isRepeats = true }
+
     private val composer = ComposerPanel(JBUI.CurrentTheme.Focus.focusColor())
 
     private val reviewService = com.claudecode.chatplugin.review.EditReviewService.getInstance(project).also {
@@ -194,6 +206,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }, BorderLayout.WEST)
             add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0)).apply {
                 isOpaque = false
+                add(limitLabel)
                 add(iconButton(AllIcons.Actions.Copy, "Copy the conversation as Markdown") { copyTranscript() })
                 add(iconButton(AllIcons.ToolbarDecorator.Export, "Export the conversation to a Markdown file") { exportTranscript() })
             }, BorderLayout.EAST)
@@ -252,9 +265,19 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // Repaint any history the session already has (persisted or pre-filled).
         session.messages.forEachIndexed { i, m -> chatView.render(i, m) }
         updateAnalyticsLabel()
+
+        limitService.addChangeListener {
+            ApplicationManager.getApplication().invokeLater { if (!project.isDisposed) updateLimitLabel() }
+        }
+        updateLimitLabel()
+        limitTicker.start()
     }
 
-    fun dispose() = chatView.dispose()
+    fun dispose() {
+        limitTicker.stop()
+        renderTimer.stop()
+        chatView.dispose()
+    }
 
     /** Pre-fills the input box, e.g. from "Send Selection to Claude". Does not send automatically. */
     fun prefillInput(text: String) {
@@ -518,6 +541,13 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private fun fmt(pattern: String, vararg args: Any): String =
         String.format(java.util.Locale.ROOT, pattern, *args)
 
+    private fun updateLimitLabel() {
+        val summary = limitService.summary()
+        limitLabel.isVisible = summary != null
+        limitLabel.text = summary ?: " "
+        limitLabel.toolTipText = if (summary != null) limitService.explanation() else null
+    }
+
     private fun formatTokens(n: Long): String = when {
         n >= 1_000_000 -> fmt("%.1fM", n / 1_000_000.0)
         n >= 1_000 -> fmt("%.1fk", n / 1_000.0)
@@ -677,6 +707,17 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             override fun onRateLimit(rateLimit: ClaudeSession.RateLimit) {
                 ApplicationManager.getApplication().invokeLater {
                     session.rateLimit = rateLimit
+                    // A limit belongs to the account, not to this chat, so it goes
+                    // to the shared service every panel reads from.
+                    limitService.update(
+                        com.claudecode.chatplugin.limits.RateLimitWindow(
+                            type = rateLimit.type,
+                            status = rateLimit.status,
+                            resetsAtEpochSec = rateLimit.resetsAtEpochSec,
+                            isUsingOverage = rateLimit.isUsingOverage,
+                            overageStatus = rateLimit.overageStatus
+                        )
+                    )
                 }
             }
 
@@ -803,6 +844,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(ChatPanel::class.java)
         val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
         const val RENDER_INTERVAL_MS = 50
+        const val LIMIT_TICK_MS = 30_000
     }
 
     /**

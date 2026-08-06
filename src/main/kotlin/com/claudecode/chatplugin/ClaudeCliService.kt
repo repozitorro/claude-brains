@@ -304,11 +304,15 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
             }
             "rate_limit_event" -> {
                 json.getAsJsonObject("rate_limit_info")?.let { info ->
+                    fun str(key: String) = info.get(key)?.takeIf { it.isJsonPrimitive }?.asString
+                    fun bool(key: String) = info.get(key)?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
                     listener.onRateLimit(
                         ClaudeSession.RateLimit(
-                            status = info.get("status")?.asString ?: "",
-                            type = info.get("rateLimitType")?.asString ?: "",
-                            resetsAtEpochSec = info.get("resetsAt")?.takeIf { it.isJsonPrimitive }?.asLong
+                            status = str("status") ?: "",
+                            type = str("rateLimitType") ?: "",
+                            resetsAtEpochSec = info.get("resetsAt")?.takeIf { it.isJsonPrimitive }?.asLong,
+                            isUsingOverage = bool("isUsingOverage"),
+                            overageStatus = str("overageStatus")
                         )
                     )
                 }

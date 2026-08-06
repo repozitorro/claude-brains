@@ -39,8 +39,10 @@ class ClaudeSession(var displayName: String) {
 
     /** A `rate_limit_event.rate_limit_info` snapshot. */
     data class RateLimit(
-        val status: String,          // e.g. "allowed"
-        val type: String,            // e.g. "five_hour"
-        val resetsAtEpochSec: Long?  // unix seconds when the window resets
+        val status: String,           // e.g. "allowed"
+        val type: String,             // e.g. "five_hour"
+        val resetsAtEpochSec: Long?,  // unix seconds when the window resets
+        val isUsingOverage: Boolean = false,
+        val overageStatus: String? = null
     )
 }
