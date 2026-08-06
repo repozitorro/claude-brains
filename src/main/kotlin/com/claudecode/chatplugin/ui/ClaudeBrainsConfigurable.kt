@@ -79,6 +79,7 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             ))
             .addComponentFillVertically(JPanel(), 0)
             .panel
+            .also { HandCursors.applyTo(it) }
     }
 
     override fun isModified(): Boolean =

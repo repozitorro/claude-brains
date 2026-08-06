@@ -49,6 +49,8 @@ class ReviewBar(private val project: Project) : JPanel(BorderLayout()) {
             BorderLayout.EAST
         )
 
+        HandCursors.applyTo(this)
+
         service.addChangeListener {
             ApplicationManager.getApplication().invokeLater { if (!project.isDisposed) refresh() }
         }

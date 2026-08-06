@@ -59,11 +59,8 @@ class ReviewFloatingToolbar(
         isFocusable = false
         margin = JBUI.emptyInsets()
         putClientProperty("JButton.buttonType", "toolBarButton")
-        // Swing buttons keep the text caret by default, which over an editor
-        // reads as "this is text", not "this is clickable".
-        cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
         addActionListener { action() }
-    }
+    }.let { com.claudecode.chatplugin.ui.HandCursors.on(it) }
 
     fun attach() {
         editor.contentComponent.add(panel)

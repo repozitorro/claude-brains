@@ -293,6 +293,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         updateLimitLabel()
         limitService.refreshBars(force = true)
         limitTicker.start()
+
+        // One pass over the finished layout: every button in this panel, including
+        // the ones on the review bar and the sign-in banner.
+        HandCursors.applyTo(this)
     }
 
     fun dispose() {

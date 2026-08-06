@@ -69,6 +69,7 @@ class SignInPanel(
             add(hint.alignLeft())
         }
         add(column, BorderLayout.NORTH)
+        HandCursors.applyTo(this)
         applyStatus(status)
     }
 
