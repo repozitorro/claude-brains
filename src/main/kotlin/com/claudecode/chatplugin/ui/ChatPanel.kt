@@ -53,9 +53,26 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private val cliService = project.getService(ClaudeCliService::class.java)
     private val settings = ClaudeCodeSettings.getInstance(project)
 
-    private val chatView: ChatView =
-        if (JcefChatView.isAvailable()) JcefChatView(project, ::handleEditLink)
-        else SwingChatView(::handleEditLink)
+    /**
+     * The rich renderer when the IDE can host a browser, the Swing one otherwise.
+     *
+     * Creation is guarded as well as the availability check: whatever goes wrong
+     * with an optional capability, it must not stop the chat from opening. The
+     * whole tool window came up empty in 2026.2 for exactly this reason.
+     */
+    private val chatView: ChatView = createChatView()
+
+    private fun createChatView(): ChatView =
+        if (JcefChatView.isAvailable()) {
+            try {
+                JcefChatView(project, ::handleEditLink)
+            } catch (e: Throwable) {
+                LOG.warn("Could not start the embedded browser; using the Swing view", e)
+                SwingChatView(::handleEditLink)
+            }
+        } else {
+            SwingChatView(::handleEditLink)
+        }
 
     private val fileSearch = ProjectFileSearch(project)
 

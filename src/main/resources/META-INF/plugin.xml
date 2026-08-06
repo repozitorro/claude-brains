@@ -162,6 +162,11 @@
 
     <depends>com.intellij.modules.platform</depends>
 
+    <!-- The embedded browser moved into its own bundled plugin in 2026.2; without
+         this its classes aren't on our classpath at all. Optional because JCEF
+         isn't shipped for every OS/architecture. -->
+    <depends optional="true" config-file="claude-brains-jcef.xml">com.intellij.modules.jcef</depends>
+
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Claude Brains"
                     secondary="true"

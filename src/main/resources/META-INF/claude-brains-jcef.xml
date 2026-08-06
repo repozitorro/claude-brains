@@ -1,0 +1,10 @@
+<!--
+  Loaded only when the JCEF plugin is present.
+
+  As of 2026.2 the embedded browser lives in its own bundled plugin
+  (com.intellij.modules.jcef) rather than on the platform classpath, so the
+  dependency has to be declared for JBCefBrowser to be visible at all. It stays
+  optional because JCEF isn't shipped for every OS/architecture, and the chat
+  falls back to its Swing renderer where it's missing.
+-->
+<idea-plugin />

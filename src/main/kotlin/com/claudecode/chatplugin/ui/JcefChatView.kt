@@ -124,7 +124,22 @@ class JcefChatView(parent: Disposable, private val onLink: (String) -> Unit) : C
     )
 
     companion object {
-        /** Whether an embedded browser can be created in this IDE/runtime. */
-        fun isAvailable(): Boolean = JBCefApp.isSupported()
+        private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(JcefChatView::class.java)
+
+        /**
+         * Whether an embedded browser can be created in this IDE/runtime.
+         *
+         * Catches [Throwable] rather than exceptions alone: in 2026.2 the browser
+         * moved into a separate bundled plugin, and simply touching [JBCefApp]
+         * threw NoClassDefFoundError — which took the whole tool window down with
+         * it. An optional capability going missing must cost the rich renderer,
+         * never the chat.
+         */
+        fun isAvailable(): Boolean = try {
+            JBCefApp.isSupported()
+        } catch (e: Throwable) {
+            LOG.info("Embedded browser unavailable, falling back to the Swing view: $e")
+            false
+        }
     }
 }
