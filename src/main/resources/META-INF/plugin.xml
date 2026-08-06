@@ -23,6 +23,21 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.4.2</b>
+        <ul>
+            <li><b>Inline review actually engages now.</b> It had required the
+                editor's document to match a separately-read disk snapshot
+                character for character, and any divergence silently disabled it.
+                The pre-edit content is reconstructed from the document itself
+                instead, and it survives unrelated later edits.</li>
+            <li>Changed files open whether or not they can be marked up.</li>
+            <li><b>Accept / Reject moved to the right edge of each change</b>, and a
+                strip floats over the bottom of the editor to step between changes
+                and take the whole file at once.</li>
+            <li>Limits moved onto their own line under the model selectors; the
+                composer no longer repeats the reset countdown.</li>
+        </ul>
+
         <b>0.4.1</b>
         <ul>
             <li><b>Real usage percentages</b>, refreshed every minute — session and
