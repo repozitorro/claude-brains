@@ -264,8 +264,12 @@ class EditReviewDecorator(
         private fun widestLine(metrics: java.awt.FontMetrics): Int {
             val fromRemoved = lines.take(MAX_MEASURED_LINES).maxOfOrNull { metrics.stringWidth(it) } ?: 0
             val marker = hunk.marker
+            // The editor's own document, never `marker.document`: this runs
+            // inside paint, on the EDT, with no read action — and resolving a
+            // marker's document can go through FileDocumentManager, which
+            // demands one. That threw on every repaint of a change.
             val fromAdded = if (marker.isValid && marker.endOffset > marker.startOffset) {
-                marker.document.getText(
+                editor.document.getText(
                     com.intellij.openapi.util.TextRange(marker.startOffset, marker.endOffset)
                 ).lineSequence().take(MAX_MEASURED_LINES).maxOfOrNull { metrics.stringWidth(it) } ?: 0
             } else {

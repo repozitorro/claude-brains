@@ -151,6 +151,19 @@ class PendingEditTest : BasePlatformTestCase() {
         assertEquals(3, review.pendingHunks.size)
     }
 
+    fun testEachHunkHoldsItsDocumentRatherThanLookingItUp() {
+        // Not a detail: reading a document back off its RangeMarker can go
+        // through FileDocumentManager, which requires a read action. Painting a
+        // change and stepping between changes both happen on the EDT without
+        // one, and both threw because of it. Holding the document removes the
+        // lookup entirely — the threading itself can't be reproduced here, so
+        // this pins the decision that fixes it.
+        val review = pending("a\nb\nc\n", "a\nB\nc\n", "b" to "B")
+
+        review.hunks.forEach { assertSame(review.document, it.document) }
+        assertEquals(listOf(1), review.pendingHunks.map { it.startLine() })
+    }
+
     fun testADocumentTheEditNoLongerDescribesIsDeclined() {
         // The change was undone (or never landed here): reverse-applying finds
         // nothing to undo, so there is nothing trustworthy to mark up.

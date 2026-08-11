@@ -11,6 +11,16 @@ import com.intellij.openapi.editor.RangeMarker
  * stay correct in any order the user reviews them.
  */
 class Hunk(
+    /**
+     * The document the [marker] lives in, held directly.
+     *
+     * Deliberately not read back off the marker: `RangeMarker.getDocument()`
+     * can go through `FileDocumentManager`, which asserts that a read action is
+     * held. That made painting a hunk — and stepping between hunks — throw on
+     * the EDT, where no read action is in force. The document is known at
+     * construction, so there is nothing to look up.
+     */
+    val document: com.intellij.openapi.editor.Document,
     /** Covers the lines Claude produced. Empty range for a pure deletion. */
     val marker: RangeMarker,
     /** The lines that were there before, restored verbatim on reject. */
@@ -31,7 +41,7 @@ class Hunk(
 
     /** Line the hunk starts on, for scrolling and for ordering. */
     fun startLine(): Int =
-        if (marker.isValid) marker.document.getLineNumber(marker.startOffset) else -1
+        if (marker.isValid) document.getLineNumber(marker.startOffset) else -1
 
     /** Removed lines, for rendering them above the change. */
     fun removedLines(): List<String> =
