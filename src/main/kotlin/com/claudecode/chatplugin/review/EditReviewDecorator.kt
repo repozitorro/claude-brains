@@ -235,12 +235,19 @@ class EditReviewDecorator(
             val rx = ax + aw + gap
             val y = target.y + 2
 
-            g.color = JBUI.CurrentTheme.Focus.focusColor()
+            // Keep and discard are opposite decisions, so they are told apart by
+            // the one cue that needs no reading. The accent colour used before
+            // said "this is a control" but not which of the two it was, and the
+            // reject button took the same red as the deleted lines behind it.
+            g.color = ACCEPT_GREEN
             g.fillRect(ax, y, aw, h)
-            g.color = removedBg
+            g.color = REJECT_RED
             g.fillRect(rx, y, rw, h)
 
-            g.color = editor.colorsScheme.defaultForeground
+            // Fixed near-white rather than the scheme's foreground: both fills
+            // are saturated, and on a light theme the scheme's dark text on them
+            // is what makes a coloured button look unreadable.
+            g.color = BUTTON_TEXT
             g.drawString(accept, ax + padding, y + metrics.ascent - 2)
             g.drawString(reject, rx + padding, y + metrics.ascent - 2)
 
@@ -275,6 +282,14 @@ class EditReviewDecorator(
 
         private companion object {
             const val MAX_MEASURED_LINES = 50
+
+            /**
+             * Darker on light themes, lighter on dark ones, so the same white
+             * label stays readable either way.
+             */
+            val ACCEPT_GREEN = com.intellij.ui.JBColor(java.awt.Color(0x3D8B47), java.awt.Color(0x4E9A55))
+            val REJECT_RED = com.intellij.ui.JBColor(java.awt.Color(0xC0392B), java.awt.Color(0xC15B5B))
+            val BUTTON_TEXT: java.awt.Color = java.awt.Color(0xF5, 0xF5, 0xF5)
         }
     }
 }

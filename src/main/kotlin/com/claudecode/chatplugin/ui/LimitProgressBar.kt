@@ -69,6 +69,10 @@ class LimitProgressBar : JComponent() {
     }
 
     private companion object {
-        const val BAR_HEIGHT = 3
+        /**
+         * 3px read as a hairline and was easy to miss entirely; 4 still sits
+         * quietly under the text but is actually visible on a normal display.
+         */
+        const val BAR_HEIGHT = 4
     }
 }

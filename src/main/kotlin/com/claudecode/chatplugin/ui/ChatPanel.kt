@@ -20,10 +20,12 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.PopupStep
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.event.KeyAdapter
@@ -134,20 +136,31 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private fun modeTooltip(choice: PermissionChoice): String =
         if (choice.hint.isNotBlank()) choice.hint else "Permission mode for this chat"
 
-    private val statusLabel = JLabel(" ").apply {
-        font = font.deriveFont(10f)
-        foreground = JBUI.CurrentTheme.Label.disabledForeground()
-        border = JBUI.Borders.empty(0, 6)
+    /**
+     * `JBFont.small()`, not `deriveFont(10f)`.
+     *
+     * A hard 10pt is an absolute size: it ignores the IDE's font setting and
+     * display scaling entirely, so on a HiDPI screen — or for anyone who has
+     * turned the IDE font up — everything else grows and this stays a 10-pixel
+     * smudge. JBFont.small() is derived from the current label font and scales
+     * with it.
+     *
+     * The colour is the IDE's secondary text rather than its *disabled* text,
+     * which is the dimmest thing in the palette and meant for controls you
+     * cannot use — not for a figure you are supposed to read.
+     */
+    private fun readableSecondary(label: JLabel): JLabel = label.apply {
+        font = JBFont.small()
+        foreground = UIUtil.getContextHelpForeground()
+        border = JBUI.Borders.empty(1, 6)
     }
+
+    private val statusLabel = readableSecondary(JLabel(" "))
 
     private val limitService = com.claudecode.chatplugin.limits.RateLimitService.getInstance(project)
 
     /** Window type, reset countdown and what's been spent inside it. */
-    private val limitLabel = JLabel(" ").apply {
-        font = font.deriveFont(10f)
-        foreground = JBUI.CurrentTheme.Label.disabledForeground()
-        border = JBUI.Borders.empty(0, 6)
-    }
+    private val limitLabel = readableSecondary(JLabel(" "))
 
     /** How full the current limit window is, read at a glance rather than parsed. */
     private val limitBar = LimitProgressBar()
@@ -646,6 +659,17 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             ?: limitService.limitBars().firstOrNull()
         limitBar.percent = session?.percentUsed
         limitBar.toolTipText = session?.let { "${it.label}: ${it.percentUsed}% used, resets ${it.resetsAt}" }
+        // Once the window is filling up, the readout stops being background
+        // information — so it stops being drawn as background information.
+        limitLabel.foreground = limitColour(session?.percentUsed)
+    }
+
+    /** Secondary while there is room, then amber, then red — matching the bar under it. */
+    private fun limitColour(percent: Int?): java.awt.Color = when {
+        percent == null -> UIUtil.getContextHelpForeground()
+        percent >= 90 -> JBColor(java.awt.Color(0xC0392B), java.awt.Color(0xE0796F))
+        percent >= 75 -> JBColor(java.awt.Color(0xA85B00), java.awt.Color(0xE0904A))
+        else -> UIUtil.getContextHelpForeground()
     }
 
     private fun formatTokens(n: Long): String = when {
@@ -896,10 +920,19 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     result.outputTokens?.let { session.totalOutputTokens += it }
 
                     if (result.permissionDenials.isNotEmpty()) {
+                        // The mode that actually applied, not the project setting:
+                        // this chat's own choice wins, and naming the wrong one
+                        // sends people to change a setting that isn't in effect.
+                        val mode = session.permissionMode?.takeIf { it.isNotBlank() }
+                            ?: settings.permissionMode.takeIf { it.isNotBlank() }
+                            ?: "the CLI's own default"
                         addSystemBubble(
-                            "⚠️ Blocked (permission mode: `${settings.permissionMode}`): " +
-                                "${result.permissionDenials.joinToString(", ")}. " +
-                                "Loosen it in Settings → Tools → Claude Brains if this was intended."
+                            "⚠️ Blocked (permission mode: `$mode`): " +
+                                "${result.permissionDenials.joinToString(", ")}.\n\n" +
+                                "This chat can't answer a confirmation prompt — the CLI runs without a " +
+                                "terminal here, so anything needing one is refused rather than asked. " +
+                                "Pick **Accept edits** or another mode in the dropdown above, or allow " +
+                                "these tools in Settings → Tools → Claude Brains."
                         )
                     }
 

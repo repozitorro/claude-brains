@@ -104,6 +104,14 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         }
         session.process = process
 
+        // Close the CLI's standard input at once. Nothing is ever written to it,
+        // and leaving it open is what made a turn needing confirmation hang: the
+        // CLI asks, waits on input that this UI has no way to send, and never
+        // reaches its result event — so the chat sat busy forever with no reply
+        // and no error. With stdin at EOF it cannot wait, and reports the
+        // blocked tools in `permission_denials` instead, which the panel shows.
+        runCatching { process.outputStream.close() }
+
         val stderr = StringBuffer()
         val stderrThread = Thread {
             BufferedReader(InputStreamReader(process.errorStream, Charsets.UTF_8)).forEachLine { line ->
