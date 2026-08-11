@@ -23,6 +23,28 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.5.1</b>
+        <ul>
+            <li><b>A turn that needed permission no longer hangs the chat.</b>
+                The CLI was asking for confirmation and waiting for an answer
+                this panel has no way to send, so the turn never finished — no
+                reply, no error, just a chat stuck thinking. It now can't wait,
+                and says which tools were blocked and how to allow them.</li>
+            <li><b>Accept and reject are green and red.</b> They were told apart
+                only by reading them, and reject wore the same red as the
+                deleted lines behind it.</li>
+            <li><b>The strip's next / previous buttons work.</b> They were
+                drawn where you could see them but were not laid out, so a
+                click passed straight through — and the caret they moved was
+                invisible in an unfocused editor, which looked like nothing
+                happening.</li>
+            <li><b>The limits readout is legible.</b> It was pinned to an
+                absolute 10pt, so it ignored the IDE's font size and display
+                scaling entirely, in the palette's <i>disabled</i> grey. It now
+                follows the interface font, turns amber past 75% and red past
+                90%, and the bar under it is no longer a hairline.</li>
+        </ul>
+
         <b>0.5.0</b>
         <ul>
             <li><b>A reply can no longer put live HTML or scripts into the chat
