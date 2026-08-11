@@ -63,7 +63,9 @@ class ReviewFloatingToolbar(
     }.let { com.claudecode.chatplugin.ui.HandCursors.on(it) }
 
     fun attach() {
-        editor.contentComponent.add(panel)
+        // Index 0 is the top of Swing's z-order: added at the end, the strip
+        // ends up behind the editor's own painting.
+        editor.contentComponent.add(panel, 0)
         editor.scrollingModel.addVisibleAreaListener(areaListener)
         refresh()
     }
@@ -88,17 +90,19 @@ class ReviewFloatingToolbar(
     /** Moves the caret to the next (or previous) change and scrolls it into view. */
     private fun jump(back: Boolean) {
         val lines = service.editFor(file)?.pendingHunks.orEmpty()
-            .map { it.startLine() }.filter { it >= 0 }.sorted()
-        if (lines.isEmpty()) return
+            .map { it.startLine() }
+            .filter { it >= 0 }
+            .distinct()
+            .sorted()
 
-        val current = editor.caretModel.logicalPosition.line
-        val target = if (back) {
-            lines.lastOrNull { it < current } ?: lines.last()
-        } else {
-            lines.firstOrNull { it > current } ?: lines.first()
-        }
+        val target = targetLine(lines, editor.caretModel.logicalPosition.line, back) ?: return
         editor.caretModel.moveToLogicalPosition(com.intellij.openapi.editor.LogicalPosition(target, 0))
+        editor.selectionModel.removeSelection()
         editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
+        // The caret is only visible in a focused editor, and the strip's buttons
+        // are deliberately not focusable — without this the view scrolls but
+        // nothing shows where it landed.
+        editor.contentComponent.requestFocusInWindow()
     }
 
     private fun reposition() {
@@ -110,6 +114,30 @@ class ReviewFloatingToolbar(
             size.width,
             size.height
         )
+        // The editor's content component lays nothing out, so the strip has to
+        // lay itself out: without this its buttons keep zero bounds, which means
+        // they never paint where they appear to be and a click lands on the
+        // panel behind them instead of on a button.
+        panel.validate()
         editor.contentComponent.repaint()
+    }
+
+    companion object {
+
+        /**
+         * The change to move to: the nearest one past [current] in the direction
+         * asked for, wrapping around at either end.
+         *
+         * Separated from the editor so the stepping rules can be tested — the
+         * wrap, and the case where the caret already sits on a change.
+         */
+        internal fun targetLine(lines: List<Int>, current: Int, back: Boolean): Int? {
+            if (lines.isEmpty()) return null
+            return if (back) {
+                lines.lastOrNull { it < current } ?: lines.last()
+            } else {
+                lines.firstOrNull { it > current } ?: lines.first()
+            }
+        }
     }
 }
