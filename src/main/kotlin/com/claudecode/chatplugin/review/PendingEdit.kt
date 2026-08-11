@@ -103,7 +103,7 @@ class PendingEdit private constructor(
                 }
                 if (startOffset > endOffset) return@mapNotNull null
 
-                Hunk(document.createRangeMarker(startOffset, endOffset), removed, kind)
+                Hunk(document, document.createRangeMarker(startOffset, endOffset), removed, kind)
             }
 
             return if (hunks.isEmpty()) null else PendingEdit(file, document, hunks)

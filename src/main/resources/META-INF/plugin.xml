@@ -23,6 +23,16 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.5.2</b>
+        <ul>
+            <li><b>Stepping between changes no longer throws.</b> Drawing a
+                change asked the platform for its document in a way that is only
+                allowed inside a read action, and painting doesn't run in one —
+                so every repaint of a change reported an error. The document is
+                held directly now. The fault was reachable only once the
+                next / previous buttons started working in 0.5.1.</li>
+        </ul>
+
         <b>0.5.1</b>
         <ul>
             <li><b>A turn that needed permission no longer hangs the chat.</b>
