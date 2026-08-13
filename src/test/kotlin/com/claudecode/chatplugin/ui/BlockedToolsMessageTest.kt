@@ -53,6 +53,28 @@ class BlockedToolsMessageTest {
     }
 
     @Test
+    fun `every blocked tool is covered, not just the first kind`() {
+        // Seen in the wild: the same `git add` refused as Bash and again as
+        // PowerShell. Suggesting only Bash unblocks half the turn, which reads
+        // as the advice not working.
+        val denials = listOf(
+            PermissionDenial("Bash", "git add a.ts"),
+            PermissionDenial("PowerShell", "git add \"a.ts\"")
+        )
+
+        assertEquals("Bash(git *) PowerShell(git *)", BlockedToolsMessage.suggestedPattern(denials))
+    }
+
+    @Test
+    fun `a tool whose detail is a path is named plainly`() {
+        // `Write(/repo/App.kt *)` is neither valid nor useful.
+        assertEquals(
+            "Write",
+            BlockedToolsMessage.suggestedPattern(listOf(PermissionDenial("Write", "/repo/App.kt")))
+        )
+    }
+
+    @Test
     fun `a blocked edit on the CLI's own rules does point at Accept edits`() {
         // Here it is the right advice, because the chat is not on that mode.
         val text = BlockedToolsMessage.format(
