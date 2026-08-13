@@ -42,14 +42,17 @@ class ReviewFloatingToolbar(
         isOpaque = true
 
         add(counter)
+        // "file" is in the label, not only the tooltip: the painted buttons
+        // inside a change say Accept and Reject too, and these decide the whole
+        // file rather than the one change you are looking at.
         add(
             com.claudecode.chatplugin.ui.ReviewActionButton.accept(
-                null, AllIcons.Actions.Checked, "Accept every change in this file"
+                "Accept file", "Accept every change in this file"
             ) { service.acceptFile(file) }
         )
         add(
             com.claudecode.chatplugin.ui.ReviewActionButton.reject(
-                null, AllIcons.Actions.Cancel, "Reject every change in this file"
+                "Reject file", "Reject every change in this file"
             ) { service.rejectFile(file) }
         )
         add(button(AllIcons.Actions.PreviousOccurence, "Previous change, across every changed file") {

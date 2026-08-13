@@ -6,7 +6,6 @@ import java.awt.Color
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.RenderingHints
-import javax.swing.Icon
 import javax.swing.JButton
 
 /**
@@ -35,16 +34,22 @@ object ReviewColors {
  * A button that carries its meaning in its colour.
  *
  * Swing's own background is ignored by most IntelliJ themes — a plain
- * `background = green` simply does not show — so the fill is painted here, and
- * the label and icon are tinted to stay legible on it.
+ * `background = green` simply does not show — so the fill is painted here and
+ * the label is set light enough to stay legible on it.
+ *
+ * Text only, deliberately. Tinting a platform icon to match meant
+ * `IconUtil.colorize`, which is a Kotlin function with a default argument: the
+ * call compiles into `colorize$default`, a synthetic bridge that exists in
+ * 2024.1 and not in 2025.3 or 2026.2. It built cleanly and would have thrown
+ * NoSuchMethodError on the IDE people actually run, taking the review controls
+ * down with it. A word needs no bridge.
  */
 class ReviewActionButton(
-    text: String?,
-    icon: Icon?,
+    text: String,
     private val fill: Color,
     tooltip: String,
     action: () -> Unit
-) : JButton(text, icon?.let { com.intellij.util.IconUtil.colorize(it, ReviewColors.ON_FILL) }) {
+) : JButton(text) {
 
     init {
         toolTipText = tooltip
@@ -72,10 +77,10 @@ class ReviewActionButton(
     }
 
     companion object {
-        fun accept(text: String?, icon: Icon?, tooltip: String, action: () -> Unit) =
-            ReviewActionButton(text, icon, ReviewColors.ACCEPT, tooltip, action)
+        fun accept(text: String, tooltip: String, action: () -> Unit) =
+            ReviewActionButton(text, ReviewColors.ACCEPT, tooltip, action)
 
-        fun reject(text: String?, icon: Icon?, tooltip: String, action: () -> Unit) =
-            ReviewActionButton(text, icon, ReviewColors.REJECT, tooltip, action)
+        fun reject(text: String, tooltip: String, action: () -> Unit) =
+            ReviewActionButton(text, ReviewColors.REJECT, tooltip, action)
     }
 }

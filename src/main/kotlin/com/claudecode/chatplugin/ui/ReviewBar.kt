@@ -38,14 +38,13 @@ class ReviewBar(private val project: Project) : JPanel(BorderLayout()), Disposab
             JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
                 isOpaque = false
                 add(
-                    ReviewActionButton.accept(
-                        "Accept all", AllIcons.Actions.Commit, "Keep every change Claude made"
-                    ) { service.acceptAll() }
+                    ReviewActionButton.accept("Accept all", "Keep every change Claude made") {
+                        service.acceptAll()
+                    }
                 )
                 add(
                     ReviewActionButton.reject(
-                        "Reject all", AllIcons.Actions.Rollback,
-                        "Restore every file to how it was before this turn"
+                        "Reject all", "Restore every file to how it was before this turn"
                     ) { rejectAllWithConfirmation() }
                 )
             },
