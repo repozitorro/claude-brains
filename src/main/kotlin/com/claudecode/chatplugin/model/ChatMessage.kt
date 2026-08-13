@@ -15,5 +15,7 @@ data class ChatMessage(
     val toolCalls: MutableList<ToolCall> = mutableListOf(),
     /** File-mutating edits Claude made this turn, shown as clickable diff/revert links. */
     val edits: MutableList<FileEdit> = mutableListOf(),
-    var isStreaming: Boolean = false
+    var isStreaming: Boolean = false,
+    /** A refusal the user can answer, shown with Allow / Deny beneath this message. */
+    var permissionRequest: PermissionRequest? = null
 )

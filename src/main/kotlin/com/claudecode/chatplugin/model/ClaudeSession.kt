@@ -21,6 +21,16 @@ class ClaudeSession(var displayName: String) {
     /** Permission mode for this chat. Null = fall back to the project setting. */
     var permissionMode: String? = null
 
+    /**
+     * Tools granted from a blocked message, for this chat only.
+     *
+     * Deliberately not persisted and deliberately not the project setting: this
+     * is the answer to "let it do that", given once, in the conversation where
+     * it came up. Anything meant to outlive the chat goes to Settings instead,
+     * which is a separate button and a deliberate act.
+     */
+    val grantedTools: MutableSet<String> = java.util.concurrent.CopyOnWriteArraySet()
+
     @Volatile
     var isBusy: Boolean = false
 
