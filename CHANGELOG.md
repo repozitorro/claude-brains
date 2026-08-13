@@ -6,6 +6,10 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.7.2
+
+- Fixes finding `claude.cmd` on Windows, which 0.7.1 got wrong: the search built its paths with the separator of whatever machine compiled it. 0.7.1 was never published.
+
 ## 0.7.1
 
 - **The usage readout stops re-reading every transcript you have ever made.** It refreshes once a minute, and it was parsing the CLI's entire session history each time to answer a question about the last few hours. Files that cannot contain anything recent are no longer opened at all.
