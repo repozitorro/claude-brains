@@ -85,8 +85,6 @@ class EditReviewDecorator(
         return renderer.hitTest(local)?.let { renderer to it }
     }
 
-    private var toolbar: ReviewFloatingToolbar? = null
-
     fun attach() {
         val review = service.editFor(file) ?: return
         editor.addEditorMouseListener(mouseListener)
@@ -98,12 +96,11 @@ class EditReviewDecorator(
             addRemovedLinesInlay(hunk)
         }
 
-        toolbar = ReviewFloatingToolbar(project, editor, file).also { it.attach() }
+        // The strip over the editor is not ours to place: it is a floating
+        // toolbar provider, and the platform attaches it to editors on its own.
     }
 
     fun detach() {
-        toolbar?.detach()
-        toolbar = null
         editor.removeEditorMouseListener(mouseListener)
         editor.removeEditorMouseMotionListener(motionListener)
         if (cursorIsHand) {
