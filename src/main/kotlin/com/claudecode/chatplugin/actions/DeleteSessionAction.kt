@@ -42,6 +42,12 @@ class DeleteSessionAction : AnAction(
         // Removing the tab is what deletes the session: the tool window's own
         // listener does that, so both routes stay in step. The flag stops that
         // listener asking the same question a second time.
+        //
+        // The intent is marked here as well as on the listener's own path,
+        // because the listener now deletes nothing that isn't marked — and this
+        // route must not depend on which callbacks removeContent happens to
+        // fire.
+        content.putUserData(ChatToolWindowFactory.DELETE_ON_PURPOSE, true)
         isConfirming = true
         try {
             toolWindow.contentManager.removeContent(content, true)

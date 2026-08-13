@@ -79,18 +79,32 @@ class ChatToolWindowFactory : ToolWindowFactory {
             override fun contentRemoveQuery(event: ContentManagerEvent) {
                 if (project.isDisposed || toolWindow.isDisposed) return
                 val session = event.content.getUserData(SESSION_KEY) ?: return
-                if (DeleteSessionAction.isConfirming) return // the action already asked
-                if (!DeleteSessionAction.confirmDelete(project, session.displayName)) {
+                if (DeleteSessionAction.isConfirming) {
+                    event.content.putUserData(DELETE_ON_PURPOSE, true) // the action already asked
+                    return
+                }
+                if (DeleteSessionAction.confirmDelete(project, session.displayName)) {
+                    event.content.putUserData(DELETE_ON_PURPOSE, true)
+                } else {
                     event.consume() // keep the tab
                 }
             }
 
             override fun contentRemoved(event: ContentManagerEvent) {
-                // Only treat this as a real "delete this conversation" when the user
-                // closed the tab — NOT when the tool window is torn down on project
-                // close, which would otherwise wipe the persisted sessions.
-                // Releasing the panel is the content disposer's job either way.
-                if (project.isDisposed || toolWindow.isDisposed) return
+                // A tab goes away for two very different reasons: the user
+                // deleted the conversation, or the IDE is shutting the tool
+                // window down. Only the first may touch the stored sessions.
+                //
+                // This used to tell them apart by asking whether the project was
+                // disposed — and at teardown it is not disposed yet. So some
+                // tabs slipped through, their sessions were removed from the
+                // list, and the state written on the way out no longer had them:
+                // conversations vanished on restart, a different few each time.
+                //
+                // Intent is now recorded where it actually exists — the removal
+                // the user was asked about — instead of being inferred from
+                // lifecycle state that says nothing about intent.
+                if (event.content.getUserData(DELETE_ON_PURPOSE) != true) return
                 event.content.getUserData(SESSION_KEY)?.let { sessionManager.closeSession(it) }
             }
         })
@@ -101,6 +115,8 @@ class ChatToolWindowFactory : ToolWindowFactory {
                 com.intellij.openapi.actionSystem.ActionManager.getInstance()
                     .getAction("ClaudeCodeChat.NewSession"),
                 com.intellij.openapi.actionSystem.ActionManager.getInstance()
+                    .getAction("ClaudeCodeChat.RenameSession"),
+                com.intellij.openapi.actionSystem.ActionManager.getInstance()
                     .getAction("ClaudeCodeChat.DeleteSession"),
                 com.intellij.openapi.actionSystem.ActionManager.getInstance()
                     .getAction("ClaudeCodeChat.UsageStats")
@@ -109,6 +125,17 @@ class ChatToolWindowFactory : ToolWindowFactory {
 
         sessionManager.addChangeListener(toolWindow.disposable) {
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+                if (project.isDisposed || toolWindow.isDisposed) return@invokeLater
+
+                // A tab's title follows its session's name, so renaming from
+                // anywhere shows up here rather than only where it was done.
+                toolWindow.contentManager.contents.forEach { content ->
+                    val session = content.getUserData(SESSION_KEY) ?: return@forEach
+                    if (content.displayName != session.displayName) {
+                        content.displayName = session.displayName
+                    }
+                }
+
                 val existingSessions = toolWindow.contentManager.contents
                     .mapNotNull { it.getUserData(SESSION_KEY) }
                     .toSet()
@@ -121,5 +148,15 @@ class ChatToolWindowFactory : ToolWindowFactory {
 
     companion object {
         val SESSION_KEY = com.intellij.openapi.util.Key.create<ClaudeSession>("claude.chat.session")
+
+        /**
+         * Marks a tab the user has actually chosen to delete.
+         *
+         * Set only on the path where the deletion was asked about, so closing
+         * the IDE — which removes every tab without asking anyone — cannot be
+         * mistaken for a decision to throw the conversations away.
+         */
+        internal val DELETE_ON_PURPOSE =
+            com.intellij.openapi.util.Key.create<Boolean>("claude.chat.deleteOnPurpose")
     }
 }

@@ -42,14 +42,25 @@ class ReviewFloatingToolbar(
         isOpaque = true
 
         add(counter)
-        add(button(AllIcons.Actions.Checked, "Accept every change in this file") {
-            service.acceptFile(file)
+        // "file" is in the label, not only the tooltip: the painted buttons
+        // inside a change say Accept and Reject too, and these decide the whole
+        // file rather than the one change you are looking at.
+        add(
+            com.claudecode.chatplugin.ui.ReviewActionButton.accept(
+                "Accept file", "Accept every change in this file"
+            ) { service.acceptFile(file) }
+        )
+        add(
+            com.claudecode.chatplugin.ui.ReviewActionButton.reject(
+                "Reject file", "Reject every change in this file"
+            ) { service.rejectFile(file) }
+        )
+        add(button(AllIcons.Actions.PreviousOccurence, "Previous change, across every changed file") {
+            jump(back = true)
         })
-        add(button(AllIcons.Actions.Cancel, "Reject every change in this file") {
-            service.rejectFile(file)
+        add(button(AllIcons.Actions.NextOccurence, "Next change, across every changed file") {
+            jump(back = false)
         })
-        add(button(AllIcons.Actions.PreviousOccurence, "Previous change") { jump(back = true) })
-        add(button(AllIcons.Actions.NextOccurence, "Next change") { jump(back = false) })
     }
 
     private val areaListener = VisibleAreaListener { reposition() }
@@ -79,24 +90,42 @@ class ReviewFloatingToolbar(
     fun refresh() {
         val pending = service.editFor(file)?.pendingHunks.orEmpty()
         panel.isVisible = pending.isNotEmpty()
-        counter.text = when (pending.size) {
-            0 -> ""
-            1 -> "1 change"
-            else -> "${pending.size} changes"
+        counter.text = buildString {
+            append(if (pending.size == 1) "1 change" else "${pending.size} changes")
+            // Say that stepping will leave this file, so arriving somewhere else
+            // reads as the button working rather than as it misfiring.
+            val elsewhere = service.reviewedFiles().count { it != file }
+            if (elsewhere > 0) {
+                append(if (elsewhere == 1) " · 1 more file" else " · $elsewhere more files")
+            }
         }
         reposition()
     }
 
-    /** Moves the caret to the next (or previous) change and scrolls it into view. */
+    /**
+     * Steps to the next (or previous) change — continuing into the other files
+     * of the turn once this one has none left in that direction.
+     */
     private fun jump(back: Boolean) {
-        val lines = service.editFor(file)?.pendingHunks.orEmpty()
-            .map { it.startLine() }
-            .filter { it >= 0 }
-            .distinct()
-            .sorted()
+        val lines = service.pendingLines(file)
 
-        val target = targetLine(lines, editor.caretModel.logicalPosition.line, back) ?: return
-        editor.caretModel.moveToLogicalPosition(com.intellij.openapi.editor.LogicalPosition(target, 0))
+        when (val step = ReviewNavigation.step(lines, editor.caretModel.logicalPosition.line, back)) {
+            is ReviewNavigation.Step.ToLine -> moveTo(step.line)
+            ReviewNavigation.Step.ToAnotherFile -> {
+                val next = ReviewNavigation.neighbour(service.reviewedFiles(), file, back)
+                when {
+                    // Another file still has changes: carry on there.
+                    next != null && service.openAtChange(next, back) -> Unit
+                    // This is the only file left, so wrap inside it rather than
+                    // going dead at the last change.
+                    else -> ReviewNavigation.entryLine(lines, back)?.let { moveTo(it) }
+                }
+            }
+        }
+    }
+
+    private fun moveTo(line: Int) {
+        editor.caretModel.moveToLogicalPosition(com.intellij.openapi.editor.LogicalPosition(line, 0))
         editor.selectionModel.removeSelection()
         editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
         // The caret is only visible in a focused editor, and the strip's buttons
@@ -122,22 +151,4 @@ class ReviewFloatingToolbar(
         editor.contentComponent.repaint()
     }
 
-    companion object {
-
-        /**
-         * The change to move to: the nearest one past [current] in the direction
-         * asked for, wrapping around at either end.
-         *
-         * Separated from the editor so the stepping rules can be tested — the
-         * wrap, and the case where the caret already sits on a change.
-         */
-        internal fun targetLine(lines: List<Int>, current: Int, back: Boolean): Int? {
-            if (lines.isEmpty()) return null
-            return if (back) {
-                lines.lastOrNull { it < current } ?: lines.last()
-            } else {
-                lines.firstOrNull { it > current } ?: lines.first()
-            }
-        }
-    }
 }

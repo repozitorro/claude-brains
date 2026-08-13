@@ -8,7 +8,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.FlowLayout
-import javax.swing.JButton
 import javax.swing.JLabel
 import javax.swing.JPanel
 
@@ -38,14 +37,16 @@ class ReviewBar(private val project: Project) : JPanel(BorderLayout()), Disposab
         add(
             JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
                 isOpaque = false
-                add(JButton("Accept all", AllIcons.Actions.Commit).apply {
-                    toolTipText = "Keep every change Claude made"
-                    addActionListener { service.acceptAll() }
-                })
-                add(JButton("Reject all", AllIcons.Actions.Rollback).apply {
-                    toolTipText = "Restore every file to how it was before this turn"
-                    addActionListener { service.rejectAll() }
-                })
+                add(
+                    ReviewActionButton.accept("Accept all", "Keep every change Claude made") {
+                        service.acceptAll()
+                    }
+                )
+                add(
+                    ReviewActionButton.reject(
+                        "Reject all", "Restore every file to how it was before this turn"
+                    ) { rejectAllWithConfirmation() }
+                )
             },
             BorderLayout.EAST
         )
@@ -56,6 +57,18 @@ class ReviewBar(private val project: Project) : JPanel(BorderLayout()), Disposab
             ApplicationManager.getApplication().invokeLater { if (!project.isDisposed) refresh() }
         }
         refresh()
+    }
+
+    /**
+     * The counts are read before asking, not after: accepting the dialog is
+     * what empties them, and a question about "0 changes in 0 files" would be
+     * the last thing the user sees before their work is put back.
+     */
+    private fun rejectAllWithConfirmation() {
+        val changes = service.pendingHunkCount
+        val files = service.pendingFileCount
+        if (changes == 0) return
+        if (ReviewConfirmations.confirmRejectAll(project, changes, files)) service.rejectAll()
     }
 
     /** Nothing of its own to release; being [Disposable] is what unsubscribes it. */

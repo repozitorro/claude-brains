@@ -23,6 +23,25 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.6.0</b>
+        <ul>
+            <li><b>Chats no longer disappear when the IDE closes.</b> Shutting
+                WebStorm down was being mistaken for closing the tabs by hand,
+                so some conversations were deleted on the way out — a different
+                few each time. Already-lost chats can't be brought back, but no
+                more will go.</li>
+            <li><b>Rename a chat</b> from the tool window's toolbar. "Chat 3"
+                stops meaning anything by the third one.</li>
+            <li><b>Stepping between changes now crosses files.</b> The next /
+                previous buttons walked one file and wrapped inside it; a turn
+                usually changes several, so they carry on into the next changed
+                file and say how many are left.</li>
+            <li><b>Accept is green, reject is red</b> — inside a change, on the
+                strip over the editor, and above the prompt.</li>
+            <li><b>Reject all asks first</b>, saying how much goes back and that
+                Undo can return it.</li>
+        </ul>
+
         <b>0.5.2</b>
         <ul>
             <li><b>Stepping between changes no longer throws.</b> Drawing a
@@ -290,6 +309,11 @@
                 class="com.claudecode.chatplugin.actions.RejectAllChangesAction"
                 text="Reject All Claude Changes"
                 description="Restore every file Claude changed to how it was before"/>
+
+        <action id="ClaudeCodeChat.RenameSession"
+                class="com.claudecode.chatplugin.actions.RenameSessionAction"
+                text="Claude Brains: Rename Chat"
+                description="Give the open conversation a name you'll recognise"/>
 
         <action id="ClaudeCodeChat.DeleteSession"
                 class="com.claudecode.chatplugin.actions.DeleteSessionAction"
