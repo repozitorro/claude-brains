@@ -18,7 +18,7 @@ class ClaudeCommandBuilderTest {
 
     private fun build(request: TurnRequest) = ClaudeCommandBuilder.build(request)
 
-    private val minimal = TurnRequest(claudeCommand = "claude", prompt = "hello")
+    private val minimal = TurnRequest(claudeCommand = "claude")
 
     /** The value passed after [flag], or null when the flag is absent. */
     private fun List<String>.valueOf(flag: String): String? =
@@ -29,7 +29,7 @@ class ClaudeCommandBuilderTest {
         val command = build(minimal)
 
         assertEquals("claude", command.first())
-        assertEquals("hello", command.valueOf("-p"))
+        assertTrue("print mode is what makes it non-interactive", command.contains("-p"))
         assertEquals("stream-json", command.valueOf("--output-format"))
         // Both are required for token-by-token deltas to arrive at all.
         assertTrue(command.contains("--verbose"))
@@ -78,13 +78,14 @@ class ClaudeCommandBuilderTest {
     }
 
     @Test
-    fun `the prompt is one argument however it is written`() {
-        // Prompts carry newlines, quotes and backticks; none of that may split
-        // into further arguments or be interpreted before the CLI sees it.
-        val awkward = "fix this:\n```\nval x = \"a b\" && rm -rf /\n```\n"
-        val command = build(minimal.copy(prompt = awkward))
+    fun `the prompt never reaches the command line at all`() {
+        // It goes to the process on stdin. As an argument it was bounded by the
+        // command line's own limit — about 32k for everything together on
+        // Windows — which a pasted log can exceed, and it had to survive
+        // quoting on the way. `-p` is passed bare, with no value after it.
+        val command = build(minimal)
 
-        assertEquals(awkward, command.valueOf("-p"))
-        assertEquals(1, command.count { it == awkward })
+        val printIndex = command.indexOf("-p")
+        assertEquals("--output-format", command.getOrNull(printIndex + 1))
     }
 }

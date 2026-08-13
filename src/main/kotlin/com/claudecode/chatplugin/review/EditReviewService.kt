@@ -43,18 +43,33 @@ class EditReviewService(private val project: Project) : Disposable {
     fun editFor(file: VirtualFile): PendingEdit? = pending[file]?.takeIf { !it.isFinished }
 
     /**
+     * What a turn's edits could and could not be taken into review.
+     *
+     * [conflicted] is kept apart from [unreviewable] because it is not a
+     * limitation to explain away — it means the file holds unsaved work of the
+     * user's that Claude has now also changed on disk, and only they can decide
+     * which one wins.
+     */
+    data class Outcome(
+        val unreviewable: List<FileEdit> = emptyList(),
+        val conflicted: List<FileEdit> = emptyList()
+    )
+
+    /**
      * Takes the edits from a finished turn into review and opens them.
      *
-     * Returns the files it could not review — an edit whose "before" text
-     * couldn't be proven exact stays with the chat's whole-file diff link.
+     * Nothing here may discard the user's own work: an edit whose "before" text
+     * cannot be proven exact keeps the chat's whole-file diff link instead, and
+     * a file with unsaved changes is left exactly as it is.
      */
-    fun submit(edits: List<FileEdit>): List<FileEdit> {
+    fun submit(edits: List<FileEdit>): Outcome {
         val unreviewable = mutableListOf<FileEdit>()
+        val conflicted = mutableListOf<FileEdit>()
         val toOpen = mutableListOf<VirtualFile>()
         var reviewed = 0
 
         for (edit in edits) {
-            val file = LocalFileSystem.getInstance().refreshAndFindFileByPath(edit.filePath)
+            val file = fileResolver(edit.filePath)
             if (file == null) {
                 LOG.info("inline review: ${edit.fileName} — not found on disk")
                 unreviewable.add(edit)
@@ -64,13 +79,27 @@ class EditReviewService(private val project: Project) : Disposable {
             // be in front of the user.
             toOpen.add(file)
 
+            val documentManager = FileDocumentManager.getInstance()
+            val open = documentManager.getDocument(file)
+
             // The CLI wrote this file behind the IDE's back, so the document may
-            // still hold the pre-edit text. Refreshing needs a write action.
+            // still hold the pre-edit text and has to be reloaded — but reloading
+            // throws away whatever is in memory. If that memory holds edits the
+            // user has not saved, this is the one place in the plugin that could
+            // silently destroy their work, so it stops instead. The two versions
+            // have genuinely diverged and only they can say which one wins.
+            if (open != null && documentManager.isDocumentUnsaved(open)) {
+                LOG.info("inline review: ${edit.fileName} — unsaved changes in the editor, leaving it alone")
+                conflicted.add(edit)
+                continue
+            }
+
+            // Refreshing needs a write action.
             ApplicationManager.getApplication().runWriteAction {
                 file.refresh(false, false)
-                FileDocumentManager.getInstance().reloadFiles(file)
+                documentManager.reloadFiles(file)
             }
-            val document = FileDocumentManager.getInstance().getDocument(file)
+            val document = documentManager.getDocument(file)
             if (document == null) {
                 LOG.info("inline review: ${edit.fileName} — no document")
                 unreviewable.add(edit)
@@ -96,9 +125,18 @@ class EditReviewService(private val project: Project) : Disposable {
         }
 
         if (toOpen.isNotEmpty()) openForReview(toOpen)
-        if (reviewed > 0 || unreviewable.isNotEmpty()) fireChanged()
-        return unreviewable
+        if (reviewed > 0 || unreviewable.isNotEmpty() || conflicted.isNotEmpty()) fireChanged()
+        return Outcome(unreviewable = unreviewable, conflicted = conflicted)
     }
+
+    /**
+     * How a recorded path becomes a file.
+     *
+     * Replaceable so the rule above — never reload over unsaved work — can be
+     * tested, which otherwise needs the edited file to exist on the real disk.
+     */
+    internal var fileResolver: (String) -> VirtualFile? =
+        { path -> LocalFileSystem.getInstance().refreshAndFindFileByPath(path) }
 
     /** Opens each reviewed file, focusing the first on its first change. */
     private fun openForReview(files: List<VirtualFile>) {

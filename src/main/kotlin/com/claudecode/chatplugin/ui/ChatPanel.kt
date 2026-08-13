@@ -90,7 +90,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             SwingChatView(::handleEditLink)
         }
 
-    private val fileSearch = ProjectFileSearch(project)
+    private val fileSearch = ProjectFileSearch(project, this)
 
     private val inputArea = JBTextArea(3, 40).apply {
         lineWrap = true
@@ -330,6 +330,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         installSlashCommandPopup()
         installEnterToSend()
         installImagePaste()
+
+        // Walk the project now, off the EDT, so the first `@` has something to
+        // offer instead of paying for the walk mid-keystroke.
+        fileSearch.warmUp()
 
         // The review bar subscribes to the review service, so it has to be
         // released with this panel rather than outliving it.
@@ -900,13 +904,27 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     // Hand the edits to inline review: this opens the files and
                     // marks each change up for accept/reject in the editor.
                     if (assistantMessage.edits.isNotEmpty()) {
-                        val notReviewable = reviewService.submit(assistantMessage.edits)
-                        if (notReviewable.isNotEmpty()) {
+                        val outcome = reviewService.submit(assistantMessage.edits)
+                        if (outcome.unreviewable.isNotEmpty()) {
                             addSystemBubble(
-                                "Couldn't mark up ${notReviewable.joinToString { it.fileName }} for inline " +
+                                "Couldn't mark up ${outcome.unreviewable.joinToString { it.fileName }} for inline " +
                                     "review — the pre-edit content can't be reconstructed exactly, so accepting " +
                                     "or rejecting line by line would be guesswork. Use the **diff** link above " +
                                     "to review the whole file instead."
+                            )
+                        }
+                        if (outcome.conflicted.isNotEmpty()) {
+                            // Not a limitation to apologise for — two versions of
+                            // the file exist and the user is the only one who can
+                            // choose. Say exactly what is where.
+                            addSystemBubble(
+                                "⚠️ **You have unsaved changes** in " +
+                                    "${outcome.conflicted.joinToString { it.fileName }}, and Claude edited " +
+                                    "the same file on disk.\n\n" +
+                                    "Your version is untouched in the editor, so nothing of yours was lost — " +
+                                    "but it was left out of inline review, because reloading it would have " +
+                                    "discarded your work. Use the **diff** link above to see Claude's version, " +
+                                    "then either save yours over it or reload the file from disk to take Claude's."
                             )
                         }
                     }

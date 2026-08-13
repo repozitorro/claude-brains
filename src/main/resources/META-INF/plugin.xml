@@ -23,6 +23,30 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.7.0</b>
+        <ul>
+            <li><b>Claude can edit files without being asked to first.</b> New
+                chats now run as <b>Accept edits</b>. The old default left the
+                CLI asking for permission — and there is no terminal here to
+                answer in, so it simply refused, which looked like Claude not
+                working. Every edit is still marked up in the editor for you to
+                accept or reject; commands still follow your CLI's own rules.
+                A mode you picked yourself is untouched.</li>
+            <li><b>Your unsaved changes are safe.</b> If Claude edits a file you
+                have unsaved work in, the file is now left exactly as it is and
+                the chat tells you both versions exist — instead of quietly
+                reloading over what you had typed.</li>
+            <li><b>The CLI is found on Windows.</b> npm installs it as
+                <code>claude.cmd</code>, which Windows would not locate from a
+                bare name — so the plugin reported it missing on machines where
+                it works fine in a terminal.</li>
+            <li><b>Long prompts no longer hit a limit.</b> The prompt is sent to
+                the CLI directly rather than on the command line, which on
+                Windows capped everything at about 32k characters.</li>
+            <li><b>Typing <code>@</code> no longer freezes the editor</b> on a
+                large project: the file list is built in the background.</li>
+        </ul>
+
         <b>0.6.1</b>
         <ul>
             <li><b>The review strip over an editor is now the platform's own

@@ -77,7 +77,6 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         val claudeCommand = settings.claudeCommand
         val request = TurnRequest(
             claudeCommand = claudeCommand,
-            prompt = prompt,
             sessionPermissionMode = session.permissionMode,
             projectPermissionMode = settings.permissionMode,
             allowedTools = settings.allowedTools,
@@ -85,7 +84,10 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
             model = session.selectedModel,
             resumeId = session.cliSessionId.takeIf { allowResume }
         )
-        val command = ClaudeCommandBuilder.build(request)
+        val command = ClaudeCommandBuilder.build(request).toMutableList()
+        // On Windows a bare "claude" is really claude.cmd, which CreateProcess
+        // will not find on its own.
+        command[0] = com.claudecode.chatplugin.cli.ExecutableResolver.resolve(command[0])
         val usedResume = request.resumeId != null
 
         val workingDir = project.basePath?.let { java.io.File(it) }
@@ -104,13 +106,19 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         }
         session.process = process
 
-        // Close the CLI's standard input at once. Nothing is ever written to it,
-        // and leaving it open is what made a turn needing confirmation hang: the
-        // CLI asks, waits on input that this UI has no way to send, and never
-        // reaches its result event — so the chat sat busy forever with no reply
-        // and no error. With stdin at EOF it cannot wait, and reports the
-        // blocked tools in `permission_denials` instead, which the panel shows.
-        runCatching { process.outputStream.close() }
+        // The prompt goes in here rather than on the command line, which has a
+        // length limit the command line does not — see ClaudeCommandBuilder.
+        //
+        // Standard input is then closed at once, which is also what keeps a turn
+        // needing confirmation from hanging: the CLI would ask, wait on input
+        // this UI has no way to send, and never reach its result event. At EOF
+        // it cannot wait, and reports the blocked tools in `permission_denials`
+        // instead, which the panel shows.
+        runCatching {
+            process.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(prompt) }
+        }.onFailure {
+            log.warn("Could not send the prompt to the CLI", it)
+        }
 
         val stderr = StringBuffer()
         val stderrThread = Thread {

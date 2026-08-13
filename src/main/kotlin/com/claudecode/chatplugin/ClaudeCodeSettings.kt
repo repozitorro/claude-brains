@@ -10,8 +10,20 @@ class ClaudeCodeSettings : PersistentStateComponent<ClaudeCodeSettings.State> {
     data class State(
         var claudeCommand: String = "claude",
         var defaultModel: String = "",      // empty = let the CLI pick its default
-        // Empty = pass no --permission-mode flag and let the CLI decide.
-        var permissionMode: String = "",
+        /**
+         * Empty would pass no `--permission-mode` flag and leave the CLI on its
+         * own default — which is to ask. This chat has no terminal to answer in,
+         * so the CLI cannot ask: it refuses instead, and the turn comes back
+         * saying it needed permission to write the file (verified against CLI
+         * 2.1.223). Out of the box that made the plugin unable to edit anything
+         * until the mode was found and changed by hand.
+         *
+         * It also contradicted how the plugin is built: inline review, revert
+         * and Accept/Reject all assume the edits are already on disk and you are
+         * deciding about them afterwards. `acceptEdits` is that model — and it
+         * covers file edits only, not commands.
+         */
+        var permissionMode: String = "acceptEdits",
         var allowedTools: String = "",      // space/comma list passed to --allowedTools, empty = don't pass
         var disallowedTools: String = ""    // passed to --disallowedTools, empty = don't pass
     )

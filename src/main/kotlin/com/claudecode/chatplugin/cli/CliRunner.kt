@@ -52,8 +52,11 @@ object CliRunner {
         timeoutSeconds: Long,
         stdin: String? = null
     ): Result {
+        // On Windows a bare "claude" is really claude.cmd, which CreateProcess
+        // will not find on its own.
+        val launched = listOf(ExecutableResolver.resolve(command.first())) + command.drop(1)
         val process = try {
-            ProcessBuilder(command)
+            ProcessBuilder(launched)
                 .apply { if (workingDir != null) directory(workingDir) }
                 .redirectErrorStream(true)
                 .start()

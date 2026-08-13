@@ -11,10 +11,15 @@ package com.claudecode.chatplugin.cli
  */
 data class TurnRequest(
     val claudeCommand: String,
-    val prompt: String,
-    /** This chat's override. Null means "no opinion". */
+    /**
+     * This chat's own choice.
+     *
+     * Null means it has never made one, so the project's applies. Blank is a
+     * choice — "run on the CLI's own rules" — and stops the fallback, which is
+     * why the two are not the same value.
+     */
     val sessionPermissionMode: String? = null,
-    /** The project setting. Blank means "no opinion". */
+    /** The project setting. Blank means pass no flag. */
     val projectPermissionMode: String = "",
     val allowedTools: String = "",
     val disallowedTools: String = "",
@@ -34,10 +39,19 @@ data class TurnRequest(
  */
 object ClaudeCommandBuilder {
 
+    /**
+     * The prompt is **not** here — it goes to the process on standard input.
+     *
+     * As an argument it was subject to the command line's own limits, which on
+     * Windows means roughly 32k characters for everything put together: a
+     * pasted log or a few file references could push a turn over it and the
+     * launch would fail or be truncated, with nothing to show why. `claude -p`
+     * with no argument reads the prompt from stdin instead (verified against
+     * CLI 2.1.223), which has no such ceiling and needs no quoting.
+     */
     fun build(request: TurnRequest): List<String> = buildList {
         add(request.claudeCommand)
         add("-p")
-        add(request.prompt)
         add("--output-format")
         add("stream-json")
         add("--verbose")                 // required alongside stream-json
