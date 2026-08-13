@@ -79,7 +79,12 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
             claudeCommand = claudeCommand,
             sessionPermissionMode = session.permissionMode,
             projectPermissionMode = settings.permissionMode,
-            allowedTools = settings.allowedTools,
+            // What the project allows, plus anything granted from a blocked
+            // message in this chat. The CLI takes a space-separated list, so the
+            // two simply join.
+            allowedTools = (listOf(settings.allowedTools) + session.grantedTools)
+                .filter { it.isNotBlank() }
+                .joinToString(" "),
             disallowedTools = settings.disallowedTools,
             model = session.selectedModel,
             resumeId = session.cliSessionId.takeIf { allowResume }

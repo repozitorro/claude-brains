@@ -84,16 +84,33 @@ object BlockedToolsMessage {
      * command, which is the program being run.
      */
     internal fun suggestedPattern(denials: List<PermissionDenial>): String? {
-        val bash = denials.filter { it.toolName == "Bash" }
-        if (bash.isNotEmpty()) {
-            val programs = bash.mapNotNull { it.detail?.trim()?.substringBefore(' ')?.ifBlank { null } }
-                .distinct()
-            if (programs.size == 1) return "Bash(${programs.single()} *)"
-            if (programs.isNotEmpty()) return programs.joinToString(" ") { "Bash($it *)" }
-        }
-        val tools = denials.map { it.toolName }.distinct()
-        return tools.takeIf { it.isNotEmpty() }?.joinToString(" ")
+        if (denials.isEmpty()) return null
+
+        // Every tool that was refused, not merely the first kind of it. The same
+        // `git add` comes back as Bash from one call and PowerShell from the
+        // next, and a suggestion covering one of them unblocks half the turn —
+        // which looks exactly like the advice not working.
+        return denials.groupBy { it.toolName }.entries
+            .flatMap { (tool, calls) ->
+                val programs = calls
+                    .mapNotNull { it.detail?.trim()?.substringBefore(' ')?.ifBlank { null } }
+                    .filter { it.isProgramName() }
+                    .distinct()
+                if (programs.isEmpty()) listOf(tool) else programs.map { "$tool($it *)" }
+            }
+            .distinct()
+            .joinToString(" ")
+            .ifBlank { null }
     }
+
+    /**
+     * Whether a detail is a program worth narrowing on.
+     *
+     * A file path is not: `Write(/repo/App.kt *)` is neither valid nor useful,
+     * so tools whose detail is a path are named plainly and allowed as a whole.
+     */
+    private fun String.isProgramName(): Boolean =
+        isNotBlank() && none { it == '/' || it == '\\' }
 
     private fun String.isFileEdit(): Boolean = this in setOf("Edit", "MultiEdit", "Write", "NotebookEdit")
 }

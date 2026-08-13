@@ -7,6 +7,7 @@ import com.claudecode.chatplugin.model.ClaudeSession
 import com.claudecode.chatplugin.model.FileEdit
 import com.claudecode.chatplugin.model.ModelChoice
 import com.claudecode.chatplugin.model.PermissionChoice
+import com.claudecode.chatplugin.model.PermissionRequest
 import com.claudecode.chatplugin.model.Role
 import com.claudecode.chatplugin.model.ToolCall
 import com.intellij.icons.AllIcons
@@ -757,6 +758,60 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         addAndRender(ChatMessage(Role.SYSTEM, markdown))
     }
 
+    /**
+     * Turns a refusal into a question with two answers.
+     *
+     * The CLI decided alone — it has no way to ask a host, so it refuses and
+     * says what it refused. Asking afterwards is the only place the question can
+     * be put, and answering yes means granting the tool and sending the same
+     * message again, which from the outside is the conversation carrying on.
+     */
+    private fun askToAllow(
+        denials: List<com.claudecode.chatplugin.cli.PermissionDenial>,
+        mode: String?,
+        prompt: String
+    ) {
+        val explanation = BlockedToolsMessage.format(denials, mode)
+        val pattern = BlockedToolsMessage.suggestedPattern(denials)
+        val message = ChatMessage(Role.SYSTEM, explanation)
+        // Without a pattern there is nothing specific to grant, so the message
+        // stands on its own rather than offering a button that would do nothing.
+        if (pattern != null) {
+            message.permissionRequest = PermissionRequest(denials, pattern, prompt)
+        }
+        addAndRender(message)
+    }
+
+    /** Applies the user's answer, and asks again when it was yes. */
+    private fun answerPermission(message: ChatMessage, index: Int, answer: PermissionRequest.Answer) {
+        val request = message.permissionRequest ?: return
+        if (request.answer != null) return // already decided; the links are a record now
+
+        request.answer = answer
+        when (answer) {
+            PermissionRequest.Answer.ALLOWED_HERE -> session.grantedTools.add(request.pattern)
+            PermissionRequest.Answer.ALLOWED_ALWAYS -> {
+                session.grantedTools.add(request.pattern)
+                settings.allowedTools = listOf(settings.allowedTools, request.pattern)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ")
+            }
+            PermissionRequest.Answer.DENIED -> Unit
+        }
+        renderNow(index, message)
+
+        if (answer == PermissionRequest.Answer.DENIED) {
+            statusLabel.text = "declined ${request.pattern}"
+            return
+        }
+        if (session.isBusy) {
+            addSystemBubble("Allowed `${request.pattern}`. Send your message again once this turn finishes.")
+            return
+        }
+        addSystemBubble("Allowed `${request.pattern}` — asking again.")
+        sendPrompt(request.prompt)
+    }
+
     /** Appends [message] to the transcript and renders it, returning its index. */
     private fun addAndRender(message: ChatMessage): Int {
         session.messages.add(message)
@@ -781,6 +836,15 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             return
         }
         inputArea.text = ""
+        sendPrompt(prompt)
+    }
+
+    /**
+     * Sends [prompt] as a turn. Separate from the input box because a granted
+     * permission asks the same question again without anyone retyping it.
+     */
+    private fun sendPrompt(prompt: String) {
+        if (prompt.isBlank() || session.isBusy) return
 
         addAndRender(ChatMessage(Role.USER, prompt))
 
@@ -943,7 +1007,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                         // sends people to change a setting that isn't in effect.
                         val mode = session.permissionMode?.takeIf { it.isNotBlank() }
                             ?: settings.permissionMode.takeIf { it.isNotBlank() }
-                        addSystemBubble(BlockedToolsMessage.format(result.permissionDenials, mode))
+                        askToAllow(result.permissionDenials, mode, prompt)
                     }
 
                     setBusy(false)
@@ -1005,6 +1069,17 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             val msgIndex = parts[1].toIntOrNull() ?: return@invokeLater
             val editIndex = parts[3].toIntOrNull() ?: return@invokeLater
             val message = session.messages.getOrNull(msgIndex) ?: return@invokeLater
+
+            val answer = when (parts[2]) {
+                "permallow" -> PermissionRequest.Answer.ALLOWED_HERE
+                "permalways" -> PermissionRequest.Answer.ALLOWED_ALWAYS
+                "permdeny" -> PermissionRequest.Answer.DENIED
+                else -> null
+            }
+            if (answer != null) {
+                answerPermission(message, msgIndex, answer)
+                return@invokeLater
+            }
 
             if (parts[2] == "revertall") {
                 val targets = message.edits.filter { it.isResolved && it.canRevert }

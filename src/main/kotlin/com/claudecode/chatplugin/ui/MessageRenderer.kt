@@ -2,6 +2,7 @@ package com.claudecode.chatplugin.ui
 
 import com.claudecode.chatplugin.model.ChatMessage
 import com.claudecode.chatplugin.model.FileEdit
+import com.claudecode.chatplugin.model.PermissionRequest
 import com.claudecode.chatplugin.model.ToolCall
 import org.commonmark.node.Node
 import org.commonmark.parser.Parser
@@ -111,6 +112,32 @@ object MessageRenderer {
         return "<ul class='cb-edits'>$rows</ul>"
     }
 
+    /**
+     * The refusal, and the two answers to it.
+     *
+     * Rendered as links for the same reason the edit actions are: the Swing
+     * fallback drives them through a HyperlinkListener, so they have to be real
+     * anchors rather than buttons.
+     */
+    private fun permissionBlock(request: PermissionRequest, msgIndex: Int): String {
+        val answered = request.answer
+        if (answered != null) {
+            val said = when (answered) {
+                PermissionRequest.Answer.ALLOWED_HERE -> "Allowed in this chat"
+                PermissionRequest.Answer.ALLOWED_ALWAYS -> "Allowed from now on"
+                PermissionRequest.Answer.DENIED -> "Declined"
+            }
+            return "<div class='cb-perm'><span class='cb-perm-done'>$said — " +
+                "<code>${escape(request.pattern)}</code></span></div>"
+        }
+        return "<div class='cb-perm'>" +
+            "<span class='cb-perm-ask'>Allow <code>${escape(request.pattern)}</code>?</span>" +
+            link(msgIndex, "permallow", 0, "Allow in this chat") +
+            link(msgIndex, "permalways", 0, "Always allow") +
+            link(msgIndex, "permdeny", 0, "No", danger = true) +
+            "</div>"
+    }
+
     private fun link(msgIndex: Int, action: String, editIndex: Int, text: String, danger: Boolean = false): String {
         val token = "claudebrains:$msgIndex:$action:$editIndex"
         val cls = if (danger) "cb-btn danger" else "cb-btn"
@@ -135,6 +162,9 @@ object MessageRenderer {
             body.append("<span class='cb-caret'>&#9611;</span>")
         } else {
             body.append(md(message.text.ifEmpty { " " }))
+            // Below the explanation, where the decision belongs: you read what
+            // was refused and why, then answer.
+            message.permissionRequest?.let { body.append(permissionBlock(it, msgIndex)) }
         }
         return body.toString()
     }
