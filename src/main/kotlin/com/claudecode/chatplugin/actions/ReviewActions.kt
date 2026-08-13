@@ -40,7 +40,17 @@ class RejectAllChangesAction : AnAction(
         e.presentation.isEnabled = e.project?.let { EditReviewService.getInstance(it).hasPending } == true
     }
 
+    /** Asks the same question the bar above the prompt asks — this must not be a way around it. */
     override fun actionPerformed(e: AnActionEvent) {
-        e.project?.let { EditReviewService.getInstance(it).rejectAll() }
+        val project = e.project ?: return
+        val service = EditReviewService.getInstance(project)
+        val changes = service.pendingHunkCount
+        if (changes == 0) return
+        if (com.claudecode.chatplugin.ui.ReviewConfirmations.confirmRejectAll(
+                project, changes, service.pendingFileCount
+            )
+        ) {
+            service.rejectAll()
+        }
     }
 }

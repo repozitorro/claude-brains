@@ -143,8 +143,30 @@ class EditReviewService(private val project: Project) : Disposable {
         cleanUpAll()
     }
 
-    /** Files still under review, for decorating editors as they open. */
+    /**
+     * Files still under review, in the order their changes arrived — which is
+     * the order stepping walks them in.
+     */
     fun reviewedFiles(): List<VirtualFile> = pending.filterValues { !it.isFinished }.keys.toList()
+
+    /** Lines still holding changes in [file], in file order. */
+    fun pendingLines(file: VirtualFile): List<Int> =
+        editFor(file)?.pendingHunks?.map { it.startLine() }?.filter { it >= 0 }?.distinct()?.sorted().orEmpty()
+
+    /**
+     * Opens [file] and puts the caret on the change to carry on from — its
+     * first, or its last when stepping backwards.
+     *
+     * Takes focus: arriving in a different file with the caret left behind in
+     * the previous one makes the next press of the button go somewhere
+     * unexpected.
+     */
+    fun openAtChange(file: VirtualFile, back: Boolean): Boolean {
+        val line = ReviewNavigation.entryLine(pendingLines(file), back) ?: return false
+        FileEditorManager.getInstance(project)
+            .openTextEditor(OpenFileDescriptor(project, file, line, 0), true)
+        return true
+    }
 
     fun documentOf(file: VirtualFile): Document? = pending[file]?.document
 
