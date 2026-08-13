@@ -115,7 +115,15 @@ class RateLimitService(private val project: Project) {
         if (!lastUsageScan.compareAndSet(last, now)) return
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val entries = runCatching { UsageStatsReader.read() }.getOrNull() ?: return@executeOnPooledThread
+            // Only transcripts that could hold something inside the windows we
+            // are counting. The oldest window start is the cutoff — everything
+            // written before it is irrelevant to every window, so those files
+            // are never opened.
+            val earliest = windows().mapNotNull { it.startedAtMillis() }.minOrNull()
+                ?: return@executeOnPooledThread
+
+            val entries = runCatching { UsageStatsReader.read(modifiedSince = earliest) }.getOrNull()
+                ?: return@executeOnPooledThread
             val totals = HashMap<String, Long>()
             for (window in windows()) {
                 val start = window.startedAtMillis() ?: continue

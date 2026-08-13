@@ -24,12 +24,25 @@ object UsageStatsReader {
 
     fun defaultRoot(): File = File(System.getProperty("user.home"), ".claude/projects")
 
-    /** Parses every transcript under [root]. Blocking; call off the EDT. */
-    fun read(root: File = defaultRoot()): List<UsageEntry> {
+    /**
+     * Parses transcripts under [root]. Blocking; call off the EDT.
+     *
+     * [modifiedSince] skips files the file system says cannot contain anything
+     * newer than that instant. The rate-limit readout only ever asks about the
+     * current window, and it asks once a minute — without this it opened and
+     * parsed every transcript the user has ever produced, every time, which for
+     * a heavy user is hundreds of megabytes a minute to answer a question about
+     * the last few hours. A file's timestamp answers it for free.
+     *
+     * Deliberately conservative: a file is skipped only when its *last* write
+     * predates the cutoff, so nothing inside the window can be missed.
+     */
+    fun read(root: File = defaultRoot(), modifiedSince: Long? = null): List<UsageEntry> {
         if (!root.isDirectory) return emptyList()
         val entries = ArrayList<UsageEntry>()
         root.listFiles()?.filter { it.isDirectory }?.forEach { dir ->
             dir.listFiles()?.filter { it.isFile && it.name.endsWith(".jsonl") }?.forEach { file ->
+                if (modifiedSince != null && file.lastModified() < modifiedSince) return@forEach
                 try {
                     file.forEachLine { line -> parseLine(line)?.let(entries::add) }
                 } catch (e: Exception) {

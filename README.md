@@ -112,9 +112,13 @@ To build an installable `.zip` you can add to WebStorm directly (**Settings
    `https://raw.githubusercontent.com/repozitorro/claude-brains/main/updatePlugins.xml`
 3. Search **Claude Brains** on the *Marketplace* tab and install it.
 
-From then on, updates arrive the normal way: tag a release
-(`git tag v0.2.0 && git push origin v0.2.0`), CI publishes it, and WebStorm
-offers the update.
+From then on, updates arrive the normal way: add a section to the top of
+`CHANGELOG.md`, bump `pluginVersion` in `gradle.properties`, then tag
+(`git tag v0.2.0 && git push origin v0.2.0`). CI builds it, publishes the
+release, and refreshes `updatePlugins.xml`, and WebStorm offers the update.
+
+The release notes shown in the IDE are generated from the topmost section of
+`CHANGELOG.md` at build time, so there is no HTML to hand-edit.
 
 **One-off — install a zip directly:**
 
@@ -157,7 +161,13 @@ Things you may still want to adjust:
      --include-partial-messages > src/test/resources/protocol/turn-<version>.jsonl
    ```
 
-   Then point the test at the new file and fix `StreamParser` until it passes.
+   Then point `RecordedTurnTest` at the new file and fix `StreamParser` until it
+   passes. Anonymise any paths first — the fixture is committed.
+
+   There are two on purpose: `turn-2.1.223.jsonl` is a real capture and catches
+   drift, while `turn-2.1.205.jsonl` is hand-built to reach the cases a natural
+   turn won't produce on demand (a failed MCP server, a permission denial, an
+   error result).
 
    The events that matter: `stream_event` → `event.content_block_delta` →
    `delta.text_delta` (answer) / `delta.thinking_delta` (reasoning), and the
