@@ -139,7 +139,7 @@ class StreamParserTest {
         assertEquals(15, turn.inputTokens)
         assertEquals(42, turn.outputTokens)
         assertEquals(4321L, turn.durationMs)
-        assertEquals(listOf("Bash"), turn.permissionDenials)
+        assertEquals(listOf(PermissionDenial("Bash")), turn.permissionDenials)
         // A successful turn must not surface result.result as an error message.
         assertNull(turn.errorMessage)
     }
@@ -151,6 +151,24 @@ class StreamParserTest {
         assertEquals(15L + 1000L + 200L, turn.contextTokens)
         // A turn can touch several models; the conversation is bounded by the biggest.
         assertEquals(200_000L, turn.contextWindow)
+    }
+
+    @Test
+    fun `a denial carries what was actually refused`() {
+        // Three "Bash" in a row says nothing about what to allow; the command
+        // is what turns the message into something you can act on.
+        val turn = StreamParser().parse(
+            """{"type":"result","is_error":false,"permission_denials":[""" +
+                """{"tool_name":"Bash","tool_input":{"command":"git add  src/App.kt"}},""" +
+                """{"tool_name":"Write","tool_input":{"file_path":"/repo/App.kt"}}]}""",
+            Recorder()
+        )
+
+        val denials = checkNotNull(turn).permissionDenials
+        assertEquals(listOf("Bash", "Write"), denials.map { it.toolName })
+        // Whitespace is collapsed so it stays one readable line.
+        assertEquals("git add src/App.kt", denials[0].detail)
+        assertEquals("/repo/App.kt", denials[1].detail)
     }
 
     @Test
