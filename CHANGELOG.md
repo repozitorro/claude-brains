@@ -6,6 +6,12 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.8.0
+
+- **You can now allow a blocked tool from the chat.** When something is refused, the message offers `Allow Bash(git *)?` with **Allow in this chat**, **Always allow** and **No**. Allowing sends your message again straight away, so you don't retype it. "In this chat" lasts until the tab is closed and is written nowhere; "always" adds it to Settings.
+- The suggested allowance now covers **every** tool that was refused. The same `git add` can come back as both Bash and PowerShell, and suggesting only one of them unblocked half the turn.
+- Note this is a question asked after the turn ends, not a prompt caught before the command runs — the CLI decides on its own in this mode and only reports what it refused, so agreeing means asking again.
+
 ## 0.7.3
 
 - **When a tool is blocked, the chat now tells you something you can act on.** It used to suggest switching to **Accept edits** even if you were already on it — that mode allows file edits, and a command like `git add` is a different permission it never covered. The message now says which it was, quotes what was actually refused (`Bash × 3 — git add src/App.kt`), and suggests a narrow allowance such as `Bash(git *)` rather than opening up every command.
