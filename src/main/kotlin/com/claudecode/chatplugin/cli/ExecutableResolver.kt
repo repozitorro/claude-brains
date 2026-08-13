@@ -50,7 +50,12 @@ object ExecutableResolver {
 
         for (entry in pathEntries) {
             for (extension in WINDOWS_EXTENSIONS) {
-                val candidate = entry.trimEnd('/', '\\') + File.separator + command + extension
+                // A literal backslash, not File.separator: this branch only ever
+                // describes Windows paths, so the separator of whatever machine
+                // is running the code is irrelevant — and wrong the moment the
+                // rule is exercised from anywhere else, which is exactly what
+                // the tests do.
+                val candidate = entry.trimEnd('/', '\\') + '\\' + command + extension
                 if (exists(candidate)) return candidate
             }
         }

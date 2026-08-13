@@ -41,14 +41,16 @@ object UsageStatsReader {
         if (!root.isDirectory) return emptyList()
         val entries = ArrayList<UsageEntry>()
         root.listFiles()?.filter { it.isDirectory }?.forEach { dir ->
-            dir.listFiles()?.filter { it.isFile && it.name.endsWith(".jsonl") }?.forEach { file ->
-                if (modifiedSince != null && file.lastModified() < modifiedSince) return@forEach
-                try {
-                    file.forEachLine { line -> parseLine(line)?.let(entries::add) }
-                } catch (e: Exception) {
-                    log.warn("Could not read transcript ${file.name}", e)
+            dir.listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".jsonl") }
+                ?.filter { modifiedSince == null || it.lastModified() >= modifiedSince }
+                ?.forEach { file ->
+                    try {
+                        file.forEachLine { line -> parseLine(line)?.let(entries::add) }
+                    } catch (e: Exception) {
+                        log.warn("Could not read transcript ${file.name}", e)
+                    }
                 }
-            }
         }
         return entries
     }
