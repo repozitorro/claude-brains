@@ -291,6 +291,11 @@
                 text="Reject All Claude Changes"
                 description="Restore every file Claude changed to how it was before"/>
 
+        <action id="ClaudeCodeChat.RenameSession"
+                class="com.claudecode.chatplugin.actions.RenameSessionAction"
+                text="Claude Brains: Rename Chat"
+                description="Give the open conversation a name you'll recognise"/>
+
         <action id="ClaudeCodeChat.DeleteSession"
                 class="com.claudecode.chatplugin.actions.DeleteSessionAction"
                 text="Claude Brains: Delete Chat"
