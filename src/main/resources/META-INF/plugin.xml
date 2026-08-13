@@ -23,6 +23,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.6.1</b>
+        <ul>
+            <li><b>The review strip over an editor is now the platform's own
+                floating toolbar</b> rather than a panel positioned by hand.
+                Where it sits, when it appears and how it layers over the text
+                are no longer ours to get wrong — which is what made its
+                buttons unclickable in the first place.</li>
+            <li>Its four controls are ordinary actions now, so they turn up in
+                <b>Find Action</b> and can be given keyboard shortcuts.</li>
+        </ul>
+
         <b>0.6.0</b>
         <ul>
             <li><b>Chats no longer disappear when the IDE closes.</b> Shutting
