@@ -271,9 +271,42 @@
             instance="com.claudecode.chatplugin.ui.ClaudeBrainsConfigurable"/>
 
         <notificationGroup id="Claude Brains" displayType="BALLOON"/>
+
+        <!-- The review strip over an editor. The platform positions it, layers
+             it and shows/hides it; the provider only decides when the file has
+             something left to review. -->
+        <editorFloatingToolbarProvider
+            implementation="com.claudecode.chatplugin.review.ReviewFloatingToolbarProvider"/>
     </extensions>
 
     <actions>
+        <!-- Contents of the floating review strip, in the order they appear.
+             The id is referenced by ReviewFloatingToolbarProvider. -->
+        <group id="ClaudeCodeChat.ReviewToolbar">
+            <action id="ClaudeCodeChat.ReviewCounter"
+                    class="com.claudecode.chatplugin.review.ReviewCounterAction"
+                    text="Changes Awaiting Review"
+                    description="How many changes are left here and in the other files of this turn"/>
+            <action id="ClaudeCodeChat.AcceptFile"
+                    class="com.claudecode.chatplugin.review.AcceptFileChangesAction"
+                    text="Accept File"
+                    description="Accept every change in this file"/>
+            <action id="ClaudeCodeChat.RejectFile"
+                    class="com.claudecode.chatplugin.review.RejectFileChangesAction"
+                    text="Reject File"
+                    description="Reject every change in this file"/>
+            <action id="ClaudeCodeChat.PreviousChange"
+                    class="com.claudecode.chatplugin.review.PreviousChangeAction"
+                    icon="AllIcons.Actions.PreviousOccurence"
+                    text="Previous Change"
+                    description="Previous change, across every changed file"/>
+            <action id="ClaudeCodeChat.NextChange"
+                    class="com.claudecode.chatplugin.review.NextChangeAction"
+                    icon="AllIcons.Actions.NextOccurence"
+                    text="Next Change"
+                    description="Next change, across every changed file"/>
+        </group>
+
         <group id="ClaudeCodeChat.EditorPopup" text="Claude Brains" popup="true">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
 
