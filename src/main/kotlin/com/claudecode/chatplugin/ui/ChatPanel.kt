@@ -943,15 +943,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                         // sends people to change a setting that isn't in effect.
                         val mode = session.permissionMode?.takeIf { it.isNotBlank() }
                             ?: settings.permissionMode.takeIf { it.isNotBlank() }
-                            ?: "the CLI's own default"
-                        addSystemBubble(
-                            "⚠️ Blocked (permission mode: `$mode`): " +
-                                "${result.permissionDenials.joinToString(", ")}.\n\n" +
-                                "This chat can't answer a confirmation prompt — the CLI runs without a " +
-                                "terminal here, so anything needing one is refused rather than asked. " +
-                                "Pick **Accept edits** or another mode in the dropdown above, or allow " +
-                                "these tools in Settings → Tools → Claude Brains."
-                        )
+                        addSystemBubble(BlockedToolsMessage.format(result.permissionDenials, mode))
                     }
 
                     setBusy(false)

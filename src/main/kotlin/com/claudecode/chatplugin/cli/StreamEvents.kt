@@ -3,6 +3,15 @@ package com.claudecode.chatplugin.cli
 import com.claudecode.chatplugin.model.ClaudeSession
 import com.claudecode.chatplugin.model.FileEdit
 
+/**
+ * A tool call the CLI refused to run.
+ *
+ * [detail] is what the call was actually for — the command, the path — because
+ * "Bash was blocked" three times over says nothing about what to allow, and
+ * allowing all of Bash to unstick one `git add` is not the trade anyone wants.
+ */
+data class PermissionDenial(val toolName: String, val detail: String? = null)
+
 /** Metadata from the terminal `result` event, handed to [StreamListener.onComplete]. */
 data class TurnResult(
     val isError: Boolean,
@@ -11,7 +20,7 @@ data class TurnResult(
     val outputTokens: Int?,
     val durationMs: Long?,
     /** Tools the CLI refused to run this turn (from `result.permission_denials`). */
-    val permissionDenials: List<String> = emptyList(),
+    val permissionDenials: List<PermissionDenial> = emptyList(),
     /**
      * How much of the model's context this turn carried, and how much it holds.
      * Everything the request was built from counts: fresh input plus whatever

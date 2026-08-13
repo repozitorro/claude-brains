@@ -221,21 +221,38 @@ class StreamParser(
             ?.maxOrNull()
             ?.takeIf { it > 0 }
 
-    /** Extracts tool names from the `result.permission_denials` array, defensively. */
-    private fun parsePermissionDenials(arr: JsonArray?): List<String> {
+    /**
+     * Extracts the refused calls from `result.permission_denials`, defensively.
+     *
+     * The tool's input is carried along where it exists: the difference between
+     * "Bash was blocked" and "`git add …` was blocked" is the difference between
+     * a message you can act on and one you cannot.
+     */
+    private fun parsePermissionDenials(arr: JsonArray?): List<PermissionDenial> {
         if (arr == null) return emptyList()
         return arr.mapNotNull { el ->
             when {
-                el.isJsonPrimitive -> el.asString
+                el.isJsonPrimitive -> PermissionDenial(el.asString)
                 el.isJsonObject -> {
                     val o = el.asJsonObject
-                    listOf("tool_name", "toolName", "tool", "name")
+                    val name = listOf("tool_name", "toolName", "tool", "name")
                         .firstNotNullOfOrNull { k -> o.get(k)?.takeIf { it.isJsonPrimitive }?.asString }
-                        ?: el.toString()
+                        ?: return@mapNotNull null
+                    PermissionDenial(name, detailOf(o.getAsJsonObject("tool_input")))
                 }
                 else -> null
             }
         }
+    }
+
+    /** The one field of a tool's input worth naming back to the user. */
+    private fun detailOf(input: JsonObject?): String? {
+        if (input == null) return null
+        val key = listOf("command", "file_path", "path", "pattern", "url", "query")
+            .firstOrNull { input.has(it) } ?: return null
+        return input.get(key)?.takeIf { it.isJsonPrimitive }?.asString
+            ?.replace(Regex("\\s+"), " ")
+            ?.let { if (it.length > MAX_DENIAL_DETAIL) it.take(MAX_DENIAL_DETAIL - 1) + "…" else it }
     }
 
     /** Turns a tool_use block into a compact one-liner like "Read foo.kt" or "Bash npm test". */
@@ -257,6 +274,9 @@ class StreamParser(
     companion object {
         /** Tool output beyond this is clamped before it reaches the chat. */
         internal const val MAX_TOOL_OUTPUT = 2000
+
+        /** A blocked command is quoted back in one line, not in full. */
+        internal const val MAX_DENIAL_DETAIL = 80
     }
 }
 

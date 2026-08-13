@@ -6,6 +6,11 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.7.3
+
+- **When a tool is blocked, the chat now tells you something you can act on.** It used to suggest switching to **Accept edits** even if you were already on it — that mode allows file edits, and a command like `git add` is a different permission it never covered. The message now says which it was, quotes what was actually refused (`Bash × 3 — git add src/App.kt`), and suggests a narrow allowance such as `Bash(git *)` rather than opening up every command.
+- **Plan** is now described as the deliberate read-only mode it is, instead of being offered settings that cannot help while it is on.
+
 ## 0.7.2
 
 - Fixes finding `claude.cmd` on Windows, which 0.7.1 got wrong: the search built its paths with the separator of whatever machine compiled it. 0.7.1 was never published.
