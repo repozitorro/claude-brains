@@ -35,6 +35,40 @@ intellij {
     plugins.set(listOf(/* no extra bundled plugins required */))
 }
 
+/**
+ * The topmost section of CHANGELOG.md, as the HTML the plugin descriptor wants.
+ *
+ * Deliberately a small parser rather than a markdown library: it only has to
+ * read what this project writes, and a build that pulls in a dependency to
+ * format its own release notes is worse than the six lines below. Each bullet
+ * is expected on a single line — CHANGELOG.md says so.
+ */
+fun latestChangeNotes(): String {
+    val changelog = file("CHANGELOG.md")
+    if (!changelog.exists()) return ""
+
+    val lines = changelog.readLines()
+    val start = lines.indexOfFirst { it.startsWith("## ") }
+    if (start < 0) return ""
+    val rest = lines.drop(start + 1)
+    val end = rest.indexOfFirst { it.startsWith("## ") }.let { if (it < 0) lines.size else start + 1 + it }
+
+    val items = lines.subList(start + 1, end)
+        .map { it.trim() }
+        .filter { it.startsWith("- ") }
+        .map { inlineHtml(it.removePrefix("- ").trim()) }
+
+    return if (items.isEmpty()) "" else items.joinToString("", "<ul>", "</ul>") { "<li>$it</li>" }
+}
+
+/** Escapes the text, then restores the little markup the notes actually use. */
+fun inlineHtml(markdown: String): String = markdown
+    .replace("&", "&amp;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;")
+    .replace(Regex("""\*\*(.+?)\*\*"""), "<b>$1</b>")
+    .replace(Regex("""`(.+?)`"""), "<code>$1</code>")
+
 tasks {
     withType<KotlinCompile> {
         kotlinOptions.jvmTarget = "17"
@@ -50,6 +84,11 @@ tasks {
     }
 
     patchPluginXml {
+        // Release notes come from CHANGELOG.md rather than living in plugin.xml,
+        // where nineteen releases of them had grown to two thirds of the file
+        // and had to be hand-edited in HTML for every release.
+        changeNotes.set(provider { latestChangeNotes() })
+
         sinceBuild.set("241")
         // No upper bound: an explicit untilBuild makes the IDE refuse to install
         // the plugin on any newer release (2026.1 is build 261, so "252.*" locked
