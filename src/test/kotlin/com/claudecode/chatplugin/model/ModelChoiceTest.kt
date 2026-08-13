@@ -44,13 +44,17 @@ class ModelChoiceTest {
         // manual, dontAsk, plan. Anything else would make the CLI reject the turn.
         val accepted = setOf("acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan")
 
-        val ids = PermissionChoice.ALL.mapNotNull { it.id }
+        // Blank is not a mode — it is the entry that passes no flag at all.
+        val ids = PermissionChoice.ALL.mapNotNull { it.id?.ifBlank { null } }
         assertEquals(accepted, ids.toSet())
     }
 
     @Test
     fun `inheriting passes no permission flag`() {
-        assertNull(PermissionChoice.INHERIT.id)
+        // Blank rather than null: a chat stores this id as its own choice, and
+        // null there means "hasn't chosen, use the project's" — which since the
+        // project default became a real mode is a different answer.
+        assertEquals("", PermissionChoice.INHERIT.id)
         assertSame(PermissionChoice.INHERIT, PermissionChoice.forId(null))
         assertSame(PermissionChoice.INHERIT, PermissionChoice.forId(""))
         // A mode the CLI no longer accepts falls back to inheriting rather than

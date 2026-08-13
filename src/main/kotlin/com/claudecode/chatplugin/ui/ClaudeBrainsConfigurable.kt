@@ -64,9 +64,11 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             .addLabeledComponent("Disallowed tools (space/comma):", disallowedField, 1, false)
             .addComponent(JLabel(
                 "<html><small>Defaults for new chats — each chat can override both from its own toolbar.<br>" +
-                    "<b>Ask</b> leaves the CLI on its configured default; <b>Accept edits</b> applies file " +
-                    "edits without asking; <b>Plan</b> is read-only; <b>Bypass permissions</b> runs everything " +
-                    "unprompted. The remaining modes are passed through to the CLI as-is.</small></html>"
+                    "<b>Accept edits</b> (the default) applies file edits and then marks each one up in the " +
+                    "editor for you to accept or reject; <b>Plan</b> is read-only; <b>Bypass permissions</b> " +
+                    "runs everything unprompted. <b>CLI default</b> passes no flag at all — but note this " +
+                    "chat has no terminal, so anything your CLI would prompt about is refused rather than " +
+                    "asked. The remaining modes are passed through as-is.</small></html>"
             ))
             .addSeparator()
             .addLabeledComponent("MCP servers:", refreshMcpButton, 1, false)
