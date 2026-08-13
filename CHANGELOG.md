@@ -6,6 +6,11 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.7.1
+
+- **The usage readout stops re-reading every transcript you have ever made.** It refreshes once a minute, and it was parsing the CLI's entire session history each time to answer a question about the last few hours. Files that cannot contain anything recent are no longer opened at all.
+- Internal: the protocol fixture the tests replay is now a real capture from CLI 2.1.223, and release notes are generated from `CHANGELOG.md` instead of being hand-written as HTML inside the plugin descriptor.
+
 ## 0.7.0
 
 - **Claude can edit files without being asked to first.** New chats now run as **Accept edits**. The old default left the CLI asking for permission — and there is no terminal here to answer in, so it simply refused, which looked like Claude not working. Every edit is still marked up in the editor for you to accept or reject; commands still follow your CLI's own rules. A mode you picked yourself is untouched.
