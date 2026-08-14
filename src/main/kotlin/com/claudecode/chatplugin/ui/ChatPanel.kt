@@ -8,6 +8,8 @@ import com.claudecode.chatplugin.model.FileEdit
 import com.claudecode.chatplugin.model.ModelChoice
 import com.claudecode.chatplugin.model.PermissionChoice
 import com.claudecode.chatplugin.model.PermissionRequest
+import com.claudecode.chatplugin.review.ConversationRestore
+import com.claudecode.chatplugin.review.ProjectProblems
 import com.claudecode.chatplugin.model.Role
 import com.claudecode.chatplugin.model.ToolCall
 import com.intellij.icons.AllIcons
@@ -92,6 +94,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         }
 
     private val fileSearch = ProjectFileSearch(project, this)
+    private val symbolSearch = ProjectSymbolSearch(project, this)
 
     private val inputArea = JBTextArea(3, 40).apply {
         lineWrap = true
@@ -263,6 +266,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }, BorderLayout.WEST)
             add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0)).apply {
                 isOpaque = false
+                add(
+                    iconButton(
+                        AllIcons.FileTypes.Text,
+                        "Project rules — CLAUDE.md, read at the start of every conversation here"
+                    ) { openProjectRules() }
+                )
                 add(iconButton(AllIcons.Actions.Copy, "Copy the conversation as Markdown") { copyTranscript() })
                 add(iconButton(AllIcons.ToolbarDecorator.Export, "Export the conversation to a Markdown file") { exportTranscript() })
             }, BorderLayout.EAST)
@@ -335,6 +344,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // Walk the project now, off the EDT, so the first `@` has something to
         // offer instead of paying for the walk mid-keystroke.
         fileSearch.warmUp()
+        symbolSearch.warmUp()
 
         // The review bar subscribes to the review service, so it has to be
         // released with this panel rather than outliving it.
@@ -464,6 +474,51 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         }
     }
 
+    /**
+     * Opens the project's CLAUDE.md, offering to create it when there isn't one.
+     *
+     * Creating is asked about rather than done: a file at the project root is
+     * the kind of thing that ends up committed, and Claude reads it on every
+     * turn from then on.
+     */
+    private fun openProjectRules() {
+        val basePath = project.basePath ?: return
+        val file = ProjectRules.fileIn(basePath)
+
+        if (!file.exists()) {
+            val create = com.intellij.openapi.ui.MessageDialogBuilder
+                .yesNo(
+                    "Create ${ProjectRules.FILE_NAME}?",
+                    "There is no ${ProjectRules.FILE_NAME} in this project yet.\n\n" +
+                        "It holds standing instructions for Claude — how to build and test, what to " +
+                        "leave alone — and the CLI reads it at the start of every conversation here.\n\n" +
+                        "It will be created at the project root, with a short outline to fill in."
+                )
+                .yesText("Create")
+                .noText("Cancel")
+                .ask(project)
+            if (!create) return
+
+            val written = runCatching { file.writeText(ProjectRules.template(project.name)) }
+            if (written.isFailure) {
+                Messages.showErrorDialog(
+                    project,
+                    "Could not create ${file.path}: ${written.exceptionOrNull()?.message}",
+                    "Claude Brains"
+                )
+                return
+            }
+        }
+
+        val virtualFile = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+            .refreshAndFindFileByPath(file.path)
+        if (virtualFile == null) {
+            statusLabel.text = "could not open ${ProjectRules.FILE_NAME}"
+            return
+        }
+        com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(virtualFile, true)
+    }
+
     private fun copyTranscript() {
         val markdown = TranscriptExporter.toMarkdown(session)
         CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(markdown))
@@ -577,13 +632,31 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     private fun showFilePopup(query: String) {
-        val matches = fileSearch.search(query)
+        val files = fileSearch.search(query)
+        // Symbols after files: you usually mean a path, and when you mean a
+        // class you will recognise it lower down. Marked so the two kinds of
+        // entry can be told apart at a glance.
+        val symbols = symbolSearch.search(query).map { SYMBOL_PREFIX + it }
+        val matches = files + symbols
         if (matches.isEmpty()) return
+
         val popup = JBPopupFactory.getInstance().createListPopup(
-            object : com.intellij.openapi.ui.popup.util.BaseListPopupStep<String>("Project Files", matches) {
+            object : com.intellij.openapi.ui.popup.util.BaseListPopupStep<String>("Project Files & Symbols", matches) {
                 override fun getTextFor(value: String) = value
                 override fun onChosen(selectedValue: String, finalChoice: Boolean): PopupStep<*>? {
-                    insertFileReference(selectedValue, query)
+                    if (selectedValue.startsWith(SYMBOL_PREFIX)) {
+                        val name = selectedValue.removePrefix(SYMBOL_PREFIX)
+                        // The file is what Claude can act on; the symbol was
+                        // only how it was found.
+                        val path = symbolSearch.fileOf(name)
+                        if (path == null) {
+                            statusLabel.text = "couldn't locate $name"
+                            return FINAL_CHOICE
+                        }
+                        insertFileReference(path, query)
+                    } else {
+                        insertFileReference(selectedValue, query)
+                    }
                     return FINAL_CHOICE
                 }
             }
@@ -615,14 +688,29 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     private fun onSendOrStop() {
-        if (session.isBusy) cliService.cancel(session) else sendCurrentInput()
+        if (session.isBusy) {
+            // Stop means stop: anything still waiting was queued behind a turn
+            // the user has just decided against, and firing it next would be
+            // the opposite of what the button says.
+            val abandoned = queued.size
+            queued.clear()
+            cliService.cancel(session)
+            if (abandoned > 0) {
+                addSystemBubble(
+                    "Stopped. " + (if (abandoned == 1) "1 queued message was" else "$abandoned queued messages were") +
+                        " not sent."
+                )
+            }
+        } else {
+            sendCurrentInput()
+        }
     }
 
     private fun setBusy(busy: Boolean) {
         sendButton.text = if (busy) "Stop" else "Send"
         sendButton.icon = if (busy) AllIcons.Actions.Suspend else AllIcons.Actions.Execute
         sendButton.toolTipText = if (busy) "Stop this turn" else "Send (Enter)"
-        if (busy) statusLabel.text = "…thinking" else updateAnalyticsLabel()
+        if (busy) statusLabel.text = "…thinking" + queuedSuffix() else updateAnalyticsLabel()
     }
 
     /** Cumulative token/cost analytics for this session, plus the rate-limit window. */
@@ -642,6 +730,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         if (used != null && window != null && window > 0) {
             parts += "context ${formatTokens(used)} / ${formatTokens(window)} " +
                 "(${fmt("%.0f", used * 100.0 / window)}%)"
+        }
+        if (session.isBusy) {
+            // Mid-turn the useful number is how much is still waiting, not what
+            // the conversation has cost so far.
+            statusLabel.text = "…thinking" + queuedSuffix()
+            return
         }
         statusLabel.text = if (parts.isEmpty()) " " else parts.joinToString("  ·  ")
         statusLabel.toolTipText =
@@ -777,9 +871,135 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // Without a pattern there is nothing specific to grant, so the message
         // stands on its own rather than offering a button that would do nothing.
         if (pattern != null) {
-            message.permissionRequest = PermissionRequest(denials, pattern, prompt)
+            // Only a command can be handed to a shell; a refused Write has
+            // nothing to run, so that button is simply not offered.
+            val command = denials.firstOrNull { it.toolName in COMMAND_TOOLS }?.detail
+                ?.takeIf { TerminalRunner.isAvailable() }
+            message.permissionRequest = PermissionRequest(denials, pattern, prompt, command)
         }
         addAndRender(message)
+    }
+
+    /**
+     * Puts every file back to how it stood before the message at [index].
+     *
+     * Newest edit first: later ones were written on top of earlier ones, and
+     * undoing them in the order they happened would restore text that was never
+     * on disk.
+     */
+    private fun restoreFilesToBefore(index: Int) {
+        val edits = ConversationRestore.editsToRevert(session.messages, index)
+        val revertible = edits.filter { it.canRevert }
+        if (revertible.isEmpty()) {
+            addSystemBubble("Nothing here can be restored — none of these edits can be undone exactly.")
+            return
+        }
+
+        val files = ConversationRestore.affectedFiles(edits)
+        val skipped = edits.size - revertible.size
+        val confirmed = com.intellij.openapi.ui.MessageDialogBuilder
+            .yesNo(
+                "Restore files to before this message?",
+                buildString {
+                    append(files.size).append(if (files.size == 1) " file" else " files")
+                    append(" will go back to how they were before this point: ")
+                    append(files.joinToString(", "))
+                    append(".\n\n")
+                    if (skipped > 0) {
+                        append(skipped)
+                        append(if (skipped == 1) " later edit cannot" else " later edits cannot")
+                        append(" be undone exactly and will be left as they are.\n\n")
+                    }
+                    append("The conversation itself is not touched — Claude still remembers all of it.")
+                }
+            )
+            .yesText("Restore")
+            .noText("Keep")
+            .icon(AllIcons.General.WarningDialog)
+            .ask(project)
+        if (!confirmed) return
+
+        val restored = revertible.count { DiffReviewer.revert(project, it) }
+
+        // The review markers describe changes that are no longer in the file.
+        // Dropping them leaves the editor honest without touching content.
+        files.forEach { name ->
+            revertible.firstOrNull { it.fileName == name }?.filePath?.let { path ->
+                com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(path)
+                    ?.let { reviewService.acceptFile(it) }
+            }
+        }
+
+        addSystemBubble(
+            "Restored $restored of ${revertible.size} " +
+                (if (revertible.size == 1) "edit" else "edits") +
+                ". The conversation is unchanged — Claude still has all of it in context, " +
+                "so say what you want done differently."
+        )
+    }
+
+    /**
+     * Looks for problems in the changed files once the IDE has had a moment to
+     * find them, and offers them back to Claude.
+     *
+     * Timed rather than event-driven on purpose: analysis runs per file as each
+     * opens, so there is no single "finished" moment to wait for, and being a
+     * few seconds late costs nothing here. Checked twice — the second pass
+     * catches the file that was still being analysed on the first.
+     */
+    private fun scheduleProblemCheck(edits: List<FileEdit>) {
+        val files = edits.mapNotNull {
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(it.filePath)
+        }
+        if (files.isEmpty()) return
+
+        var attempt = 0
+        val timer = Timer(PROBLEM_CHECK_DELAY_MS) { event ->
+            attempt++
+            if (disposed || project.isDisposed) {
+                (event.source as? Timer)?.stop()
+                return@Timer
+            }
+            val problems = ProjectProblems.collect(project, files)
+            if (problems.isNotEmpty()) {
+                (event.source as? Timer)?.stop()
+                reportProblems(problems)
+            } else if (attempt >= PROBLEM_CHECK_ATTEMPTS) {
+                (event.source as? Timer)?.stop()
+            }
+        }
+        timer.isRepeats = true
+        timer.start()
+    }
+
+    /** Shows what the IDE found, with one click to hand it back. */
+    private fun reportProblems(problems: List<ProjectProblems.Problem>) {
+        val listed = problems.joinToString("\n") { "- `${it.fileName}:${it.line}` — ${it.description}" }
+        val message = ChatMessage(
+            Role.SYSTEM,
+            "⚠️ The IDE reports ${problems.size} " +
+                (if (problems.size == 1) "error" else "errors") +
+                " in the files Claude changed:\n\n$listed"
+        )
+        message.problems = problems
+        addAndRender(message)
+    }
+
+    /**
+     * Hands the refused command to a shell, leaving the permission alone.
+     *
+     * Running it yourself grants nothing, so the question stays open: you may
+     * still want to allow it afterwards, or not.
+     */
+    private fun runInTerminal(message: ChatMessage) {
+        val command = message.permissionRequest?.command ?: return
+        if (TerminalRunner.run(project, command)) {
+            statusLabel.text = "running in terminal"
+            return
+        }
+        // No terminal to hand it to, so hand it over the only other way.
+        CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(command))
+        addSystemBubble("Couldn't open a terminal, so the command is on your clipboard:\n\n```\n$command\n```")
     }
 
     /** Applies the user's answer, and asks again when it was yes. */
@@ -830,23 +1050,100 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
     private fun sendCurrentInput() {
         val prompt = inputArea.text.trim()
-        if (prompt.isEmpty() || session.isBusy) return
-        if (prompt.startsWith("/") && handleSlashCommand(prompt)) {
-            inputArea.text = ""
+        if (prompt.isEmpty()) return
+        inputArea.text = ""
+        submitText(prompt)
+    }
+
+    /**
+     * Takes what the user typed, now or when there is room for it.
+     *
+     * Typing during a turn used to be answered with "this session is already
+     * waiting on a response" and the text was gone — the thought you had while
+     * reading, lost because the reading was still happening. It waits its turn
+     * instead.
+     *
+     * Everything queues, slash commands included. One rule is easier to live
+     * with than a list of exceptions, and `/clear` arriving in the middle of
+     * the turn it was meant to follow would be its own surprise.
+     */
+    internal fun submitText(text: String) {
+        val prompt = text.trim()
+        if (prompt.isEmpty()) return
+
+        if (session.isBusy) {
+            queued.add(prompt)
+            // Shown straight away: it is going to be sent verbatim, and a
+            // message that vanishes on Enter is indistinguishable from one that
+            // was dropped.
+            addAndRender(ChatMessage(Role.USER, prompt))
+            updateAnalyticsLabel()
             return
         }
-        inputArea.text = ""
-        sendPrompt(prompt)
+        dispatch(prompt, alreadyShown = false)
+    }
+
+    private fun dispatch(prompt: String, alreadyShown: Boolean) {
+        if (prompt.startsWith("/") && handleSlashCommand(prompt)) return
+        sendPrompt(prompt, alreadyShown)
+    }
+
+    /** Sends the next thing waiting, once the turn that was in the way has ended. */
+    private fun sendNextQueued() {
+        if (disposed || session.isBusy) return
+        val next = queued.removeFirstOrNull() ?: return
+        dispatch(next, alreadyShown = true)
+    }
+
+    /** Messages typed while a turn was running, in the order they were typed. */
+    private val queued = ArrayDeque<String>()
+
+    internal val queuedCount: Int get() = queued.size
+
+    private fun queuedSuffix(): String = when (queued.size) {
+        0 -> ""
+        1 -> "  ·  1 queued"
+        else -> "  ·  ${queued.size} queued"
+    }
+
+    /**
+     * Writes unsaved editor content to disk before the CLI reads it.
+     *
+     * The CLI opens files from disk. Anything typed and not saved is invisible
+     * to it — so asking about a file you have just edited got an answer about
+     * the version before your edit, with nothing to suggest that had happened.
+     *
+     * Only this project's files, and only the ones actually unsaved: saving
+     * every open document in the IDE would reach into work that has nothing to
+     * do with the question being asked.
+     */
+    private fun saveProjectDocuments() {
+        val documentManager = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+        val index = com.intellij.openapi.roots.ProjectFileIndex.getInstance(project)
+
+        val ours = documentManager.unsavedDocuments.filter { document ->
+            val file = documentManager.getFile(document) ?: return@filter false
+            runCatching { index.isInContent(file) }.getOrDefault(false)
+        }
+        if (ours.isEmpty()) return
+
+        ApplicationManager.getApplication().runWriteAction {
+            ours.forEach { runCatching { documentManager.saveDocument(it) } }
+        }
+        statusLabel.text = if (ours.size == 1) "saved 1 file" else "saved ${ours.size} files"
     }
 
     /**
      * Sends [prompt] as a turn. Separate from the input box because a granted
      * permission asks the same question again without anyone retyping it.
      */
-    private fun sendPrompt(prompt: String) {
+    private fun sendPrompt(prompt: String, alreadyShown: Boolean = false) {
         if (prompt.isBlank() || session.isBusy) return
 
-        addAndRender(ChatMessage(Role.USER, prompt))
+        saveProjectDocuments()
+
+        // A queued message is already in the transcript from when it was typed.
+        if (!alreadyShown) addAndRender(ChatMessage(Role.USER, prompt))
 
         val assistantMessage = ChatMessage(Role.ASSISTANT, "", isStreaming = true)
         val assistantIndex = addAndRender(assistantMessage)
@@ -962,8 +1259,16 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                             null
                         }
                         edit.resolve(after)
+                        // Worked out once, here, rather than on every repaint of
+                        // the conversation.
+                        edit.preview = com.claudecode.chatplugin.review.EditPreview.of(edit)
                     }
                     repaintNow()
+
+                    // The IDE analyses the changed files as they open, so what it
+                    // knows isn't known yet. Ask again shortly rather than
+                    // reporting an empty result the moment the turn ends.
+                    if (assistantMessage.edits.isNotEmpty()) scheduleProblemCheck(assistantMessage.edits)
 
                     // Hand the edits to inline review: this opens the files and
                     // marks each change up for accept/reject in the editor.
@@ -1011,6 +1316,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     }
 
                     setBusy(false)
+                    sendNextQueued()
                 }
             }
 
@@ -1020,6 +1326,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     assistantMessage.text += "\n\n**Error:** $message"
                     repaintNow()
                     setBusy(false)
+                    sendNextQueued()
                 }
             }
         })
@@ -1053,8 +1360,18 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private companion object {
         private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(ChatPanel::class.java)
         val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
+
+        /** Tools whose refused input is a shell command, so it can be run as one. */
+        val COMMAND_TOOLS = setOf("Bash", "PowerShell")
+
+        /** Marks a symbol entry in the `@` popup, where everything else is a path. */
+        const val SYMBOL_PREFIX = "◆ "
         const val RENDER_INTERVAL_MS = 50
         const val LIMIT_TICK_MS = 60_000
+
+        /** How long the IDE gets to analyse a changed file before we look. */
+        const val PROBLEM_CHECK_DELAY_MS = 2_500
+        const val PROBLEM_CHECK_ATTEMPTS = 3
     }
 
     /**
@@ -1070,6 +1387,19 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             val editIndex = parts[3].toIntOrNull() ?: return@invokeLater
             val message = session.messages.getOrNull(msgIndex) ?: return@invokeLater
 
+            if (parts[2] == "permterminal") {
+                runInTerminal(message)
+                return@invokeLater
+            }
+            if (parts[2] == "opensettings") {
+                cliService.openSettings()
+                return@invokeLater
+            }
+            if (parts[2] == "fixproblems") {
+                message.problems?.takeIf { it.isNotEmpty() }?.let { sendPrompt(ProjectProblems.describe(it)) }
+                return@invokeLater
+            }
+
             val answer = when (parts[2]) {
                 "permallow" -> PermissionRequest.Answer.ALLOWED_HERE
                 "permalways" -> PermissionRequest.Answer.ALLOWED_ALWAYS
@@ -1078,6 +1408,11 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }
             if (answer != null) {
                 answerPermission(message, msgIndex, answer)
+                return@invokeLater
+            }
+
+            if (parts[2] == "restorehere") {
+                restoreFilesToBefore(msgIndex)
                 return@invokeLater
             }
 

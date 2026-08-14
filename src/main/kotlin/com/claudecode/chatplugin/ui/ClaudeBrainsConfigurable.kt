@@ -63,6 +63,12 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             .addLabeledComponent("Allowed tools (space/comma):", allowedField, 1, false)
             .addLabeledComponent("Disallowed tools (space/comma):", disallowedField, 1, false)
             .addComponent(JLabel(
+                "<html><small>In the tool lists you can just write a command — <code>git</code> allows " +
+                    "<code>git add -A</code> through whichever shell runs it. A capitalised name means the " +
+                    "whole tool (<code>Edit</code>), and the CLI's own form (<code>Bash(git *)</code>) is " +
+                    "passed through as written.</small></html>"
+            ))
+            .addComponent(JLabel(
                 "<html><small>Defaults for new chats — each chat can override both from its own toolbar.<br>" +
                     "<b>Accept edits</b> (the default) applies file edits and then marks each one up in the " +
                     "editor for you to accept or reject; <b>Plan</b> is read-only; <b>Bypass permissions</b> " +

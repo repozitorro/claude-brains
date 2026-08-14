@@ -21,6 +21,14 @@ data class PermissionRequest(
     val pattern: String,
     /** The message to send again once permission is given. */
     val prompt: String,
+    /**
+     * The refused command, when one of the calls was a command at all.
+     *
+     * Offered separately from allowing it, because handing it to a shell is not
+     * a permission at all: it is the user doing the thing themselves, which
+     * needs no grant and changes no setting.
+     */
+    val command: String? = null,
     /** Set once answered, so the buttons stop offering a decision already made. */
     var answer: Answer? = null
 ) {

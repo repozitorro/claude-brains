@@ -30,6 +30,10 @@
          isn't shipped for every OS/architecture. -->
     <depends optional="true" config-file="claude-brains-jcef.xml">com.intellij.modules.jcef</depends>
 
+    <!-- Supplies the shell that a refused command can be handed to. Optional:
+         the terminal is a bundled plugin and can be turned off. -->
+    <depends optional="true" config-file="claude-brains-terminal.xml">org.jetbrains.plugins.terminal</depends>
+
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Claude Brains"
                     secondary="true"
@@ -47,13 +51,17 @@
             displayName="Claude Brains"
             instance="com.claudecode.chatplugin.ui.ClaudeBrainsConfigurable"/>
 
+        <!-- What the CLI was asked and what it said. Secondary and closed by
+             default: it is for the moment something goes wrong, not for every
+             day. -->
+        <toolWindow id="Claude Brains Log"
+                    secondary="true"
+                    anchor="bottom"
+                    canCloseContents="false"
+                    factoryClass="com.claudecode.chatplugin.log.CliLogToolWindowFactory"/>
+
         <notificationGroup id="Claude Brains" displayType="BALLOON"/>
 
-        <!-- The review strip over an editor. The platform positions it, layers
-             it and shows/hides it; the provider only decides when the file has
-             something left to review. -->
-        <editorFloatingToolbarProvider
-            implementation="com.claudecode.chatplugin.review.ReviewFloatingToolbarProvider"/>
     </extensions>
 
     <actions>
@@ -104,6 +112,11 @@
                 description="Open a lightweight prompt popup near the caret">
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift C"/>
         </action>
+
+        <action id="ClaudeCodeChat.SendTerminal"
+                class="com.claudecode.chatplugin.actions.SendTerminalToClaudeAction"
+                text="Claude Brains: Send Terminal Output to Claude"
+                description="Put the terminal's selection, or the end of its output, into the chat"/>
 
         <action id="ClaudeCodeChat.UsageStats"
                 class="com.claudecode.chatplugin.actions.ShowUsageStatsAction"

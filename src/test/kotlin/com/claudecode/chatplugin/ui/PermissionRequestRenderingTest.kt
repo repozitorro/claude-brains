@@ -64,6 +64,37 @@ class PermissionRequestRenderingTest {
     }
 
     @Test
+    fun `a refused command can be handed to a shell instead`() {
+        // Not a permission: running it yourself grants nothing and changes no
+        // setting, which is why it is offered alongside the two that do.
+        val message = ChatMessage(
+            Role.SYSTEM,
+            "Blocked.",
+            permissionRequest = PermissionRequest(
+                denials = listOf(PermissionDenial("Bash", "git add a.kt")),
+                pattern = "Bash(git *)",
+                prompt = "commit my work",
+                command = "git add a.kt"
+            )
+        )
+
+        val html = MessageRenderer.fragment(message, msgIndex = 2, streaming = false)
+
+        assertTrue(html, html.contains("claudebrains:2:permterminal:0"))
+        assertTrue(html, html.contains("Run in terminal"))
+    }
+
+    @Test
+    fun `with nothing to run, the terminal is not offered`() {
+        // A refused Write has no command; a button that could only fail is
+        // worse than no button.
+        val html = MessageRenderer.fragment(asking(), msgIndex = 2, streaming = false)
+
+        assertFalse(html, html.contains("permterminal"))
+        assertTrue("the two answers are still there", html.contains("permallow"))
+    }
+
+    @Test
     fun `a message with nothing to decide carries no buttons`() {
         val html = MessageRenderer.fragment(ChatMessage(Role.SYSTEM, "Just a note."), 0, streaming = false)
 

@@ -91,6 +91,28 @@ object MessageRenderer {
         .replace("<", "&lt;")
         .replace(">", "&gt;")
 
+    /**
+     * The changed lines themselves.
+     *
+     * Every line is escaped: this is code Claude wrote, quoted from a file, and
+     * it goes into the page as markup unless it is neutralised first — the same
+     * reason the reply itself is escaped.
+     */
+    private fun previewBlock(preview: List<com.claudecode.chatplugin.model.DiffLine>): String {
+        if (preview.isEmpty()) return ""
+        val rows = preview.joinToString("") { line ->
+            when (line.kind) {
+                com.claudecode.chatplugin.model.DiffLine.Kind.ADDED ->
+                    "<div class='cb-d cb-d-add'>+ ${escapeKeepNewlines(line.text)}</div>"
+                com.claudecode.chatplugin.model.DiffLine.Kind.REMOVED ->
+                    "<div class='cb-d cb-d-del'>- ${escapeKeepNewlines(line.text)}</div>"
+                com.claudecode.chatplugin.model.DiffLine.Kind.GAP ->
+                    "<div class='cb-d cb-d-gap'>${escapeKeepNewlines(line.text.ifEmpty { "⋯" })}</div>"
+            }
+        }
+        return "<div class='cb-diff'>$rows</div>"
+    }
+
     private fun editsBlock(edits: List<FileEdit>, msgIndex: Int, withLinks: Boolean): String {
         if (edits.isEmpty()) return ""
         val rows = StringBuilder()
@@ -102,11 +124,22 @@ object MessageRenderer {
                 if (e.canRevert) rows.append(link(msgIndex, "revert", i, "revert", danger = true))
             }
             rows.append("</li>")
+            // Under its own file, so several changed files stay readable as a
+            // list rather than one long ribbon of green and red.
+            if (withLinks) rows.append("<li class='cb-edit-body'>").append(previewBlock(e.preview)).append("</li>")
         }
         // One-click undo for the whole turn, once more than one edit is revertible.
         if (withLinks && edits.count { it.isResolved && it.canRevert } > 1) {
             rows.append("<li class='cb-edit'>")
                 .append(link(msgIndex, "revertall", -1, "revert all", danger = true))
+                .append("</li>")
+        }
+        // Everything from here on, for when the wrong turn was several messages
+        // back. Offered on every edited message; the handler decides whether
+        // there is anything later to undo.
+        if (withLinks && edits.any { it.isResolved && it.canRevert }) {
+            rows.append("<li class='cb-edit'>")
+                .append(link(msgIndex, "restorehere", -1, "restore files to before this", danger = true))
                 .append("</li>")
         }
         return "<ul class='cb-edits'>$rows</ul>"
@@ -134,7 +167,13 @@ object MessageRenderer {
             "<span class='cb-perm-ask'>Allow <code>${escape(request.pattern)}</code>?</span>" +
             link(msgIndex, "permallow", 0, "Allow in this chat") +
             link(msgIndex, "permalways", 0, "Always allow") +
+            // Running it yourself is not a permission — it grants nothing and
+            // changes no setting — so it sits apart from the two that do.
+            (request.command?.let { link(msgIndex, "permterminal", 0, "Run in terminal") } ?: "") +
             link(msgIndex, "permdeny", 0, "No", danger = true) +
+            // The long way round, one click instead of four: the message can
+            // describe the path to the setting, but it shouldn't have to.
+            link(msgIndex, "opensettings", 0, "Settings…") +
             "</div>"
     }
 
@@ -165,6 +204,11 @@ object MessageRenderer {
             // Below the explanation, where the decision belongs: you read what
             // was refused and why, then answer.
             message.permissionRequest?.let { body.append(permissionBlock(it, msgIndex)) }
+            message.problems?.takeIf { it.isNotEmpty() }?.let {
+                body.append("<div class='cb-perm'>")
+                    .append(link(msgIndex, "fixproblems", 0, "Ask Claude to fix these"))
+                    .append("</div>")
+            }
         }
         return body.toString()
     }

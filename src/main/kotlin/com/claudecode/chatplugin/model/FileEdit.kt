@@ -11,12 +11,32 @@ package com.claudecode.chatplugin.model
  * we fall back to [snapshotBefore] — the on-disk content captured (best effort)
  * the moment the edit was first observed.
  */
+/** One line of the change as it is shown in the conversation. */
+data class DiffLine(val kind: Kind, val text: String) {
+    enum class Kind {
+        ADDED,
+        REMOVED,
+
+        /** Stands in for the untouched stretch between two changes. */
+        GAP
+    }
+}
+
 class FileEdit(
     val filePath: String,
     val toolName: String,
     val snapshotBefore: String?
 ) {
     val ops: MutableList<EditOp> = mutableListOf()
+
+    /**
+     * The change itself, short enough to read in the chat.
+     *
+     * Filled in once the turn ends and the file's final state is known — the
+     * same moment [resolve] runs — because computing it per render would mean
+     * diffing every edit in the conversation on every repaint.
+     */
+    var preview: List<DiffLine> = emptyList()
 
     /**
      * Filled in once the turn completes and the file's final state is known.

@@ -141,6 +141,20 @@ a.cb-btn {
 a.cb-btn:hover { color: var(--fg); border-color: var(--muted); }
 a.cb-btn.danger:hover { color: var(--err); border-color: var(--err); }
 
+/* ---------- Inline change preview ---------- */
+.cb-edit-body { list-style: none; }
+.cb-diff {
+  margin: 2px 0 6px; border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; font-family: var(--mono); font-size: 11px; line-height: 1.45;
+  max-height: 320px; overflow-y: auto;
+}
+.cb-d { padding: 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Tinted grounds rather than coloured text: the eye finds the shape of the
+   change without reading a character of it. */
+.cb-d-add { background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.cb-d-del { background: color-mix(in srgb, var(--err) 16%, transparent); }
+.cb-d-gap { color: var(--muted); text-align: center; padding: 1px 0; }
+
 /* ---------- Permission request ---------- */
 .cb-perm {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

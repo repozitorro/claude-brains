@@ -95,6 +95,11 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         command[0] = com.claudecode.chatplugin.cli.ExecutableResolver.resolve(command[0])
         val usedResume = request.resumeId != null
 
+        // Logged before the attempt, so a launch that fails still says what was
+        // tried — which is most of the answer when the CLI can't be found.
+        val cliLog = com.claudecode.chatplugin.log.CliLog.getInstance(project)
+        cliLog.record(com.claudecode.chatplugin.log.CliLog.Kind.COMMAND, command.joinToString(" "))
+
         val workingDir = project.basePath?.let { java.io.File(it) }
         val process = try {
             ProcessBuilder(command)
@@ -102,6 +107,7 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
                 .redirectErrorStream(false)
                 .start()
         } catch (e: java.io.IOException) {
+            cliLog.record(com.claudecode.chatplugin.log.CliLog.Kind.ERROR, "Could not launch: ${e.message}")
             listener.onError(
                 "Could not launch '$claudeCommand'. Is the Claude Code CLI installed " +
                     "and on your PATH? You can set a full path in Settings > Tools > " +
@@ -129,6 +135,7 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         val stderrThread = Thread {
             BufferedReader(InputStreamReader(process.errorStream, Charsets.UTF_8)).forEachLine { line ->
                 log.info("claude stderr: $line")
+                cliLog.record(com.claudecode.chatplugin.log.CliLog.Kind.ERROR, line)
                 stderr.append(line).append('\n')
             }
         }.apply { isDaemon = true; start() }
@@ -137,12 +144,19 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8)).use { reader ->
             reader.forEachLine { line ->
                 if (line.isBlank()) return@forEachLine
+                // The token-by-token deltas are hundreds of lines a turn and say
+                // nothing about why something went wrong; everything else is the
+                // part worth reading.
+                if (!line.contains("\"content_block_delta\"")) {
+                    cliLog.record(com.claudecode.chatplugin.log.CliLog.Kind.OUTPUT, line)
+                }
                 parser.parse(line, listener)?.let { completed = it }
             }
         }
 
         val exitCode = process.waitFor()
         stderrThread.join(STDERR_JOIN_MS)
+        cliLog.record(com.claudecode.chatplugin.log.CliLog.Kind.INFO, "exited with code $exitCode")
 
         val stderrText = stderr.toString().trim()
         val result = completed

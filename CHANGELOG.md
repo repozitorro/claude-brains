@@ -6,6 +6,21 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.9.0
+
+- **Claude now sees your unsaved changes.** The CLI reads files from disk, so anything typed and not saved was invisible to it — you could ask about a file you had just edited and get an answer about the version before your edit. Unsaved files in the project are written out before each turn.
+- **The change is shown in the conversation.** Instead of a line saying a file was edited, the changed lines appear under it — removed in red, added in green. The **diff** link is still there for the full picture.
+- **The IDE's errors are offered back to Claude.** After a turn that changed files, any errors the IDE finds in them appear in the chat with one click to send them back.
+- **Type while Claude is answering.** Messages now queue instead of being refused, and go as soon as the turn ends. **Stop** cancels the queue too.
+- **The review strip sits at the foot of the file**, centred and stationary, with green **Accept file** and red **Reject file**.
+- **Restore files to before any message**, for when it went wrong several turns back. The conversation is left alone — Claude still remembers all of it.
+- **Send the terminal to the chat**: the selection, or the tail of a long build log.
+- **`@` finds symbols**, not only file paths — type a class name and get its file.
+- **Allowed tools take a plain command.** Write `git` rather than `Bash(git *) PowerShell(git *)`.
+- **A CLAUDE.md button**: the standing instructions Claude reads in this project, opened or created from the panel.
+- **A log window** showing exactly what the CLI was asked and what it replied, for when something goes wrong.
+- A blocked tool now links straight to Settings instead of describing the way there.
+
 ## 0.8.0
 
 - **You can now allow a blocked tool from the chat.** When something is refused, the message offers `Allow Bash(git *)?` with **Allow in this chat**, **Always allow** and **No**. Allowing sends your message again straight away, so you don't retype it. "In this chat" lasts until the tab is closed and is written nowhere; "always" adds it to Settings.
