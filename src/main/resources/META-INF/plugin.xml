@@ -51,6 +51,15 @@
             displayName="Claude Brains"
             instance="com.claudecode.chatplugin.ui.ClaudeBrainsConfigurable"/>
 
+        <!-- What the CLI was asked and what it said. Secondary and closed by
+             default: it is for the moment something goes wrong, not for every
+             day. -->
+        <toolWindow id="Claude Brains Log"
+                    secondary="true"
+                    anchor="bottom"
+                    canCloseContents="false"
+                    factoryClass="com.claudecode.chatplugin.log.CliLogToolWindowFactory"/>
+
         <notificationGroup id="Claude Brains" displayType="BALLOON"/>
 
         <!-- The review strip over an editor. The platform positions it, layers
