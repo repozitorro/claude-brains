@@ -61,11 +61,13 @@ object ClaudeCommandBuilder {
             add("--permission-mode")
             add(it)
         }
-        request.allowedTools.trim().takeIf { it.isNotEmpty() }?.let {
+        // Expanded here rather than stored expanded: the setting keeps what the
+        // user wrote, and `git` becomes the CLI's spelling on the way out.
+        ToolAllowance.expand(request.allowedTools).takeIf { it.isNotEmpty() }?.let {
             add("--allowedTools")
             add(it)
         }
-        request.disallowedTools.trim().takeIf { it.isNotEmpty() }?.let {
+        ToolAllowance.expand(request.disallowedTools).takeIf { it.isNotEmpty() }?.let {
             add("--disallowedTools")
             add(it)
         }
