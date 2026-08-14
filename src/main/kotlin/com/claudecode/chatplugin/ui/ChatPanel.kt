@@ -616,14 +616,29 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     private fun onSendOrStop() {
-        if (session.isBusy) cliService.cancel(session) else sendCurrentInput()
+        if (session.isBusy) {
+            // Stop means stop: anything still waiting was queued behind a turn
+            // the user has just decided against, and firing it next would be
+            // the opposite of what the button says.
+            val abandoned = queued.size
+            queued.clear()
+            cliService.cancel(session)
+            if (abandoned > 0) {
+                addSystemBubble(
+                    "Stopped. " + (if (abandoned == 1) "1 queued message was" else "$abandoned queued messages were") +
+                        " not sent."
+                )
+            }
+        } else {
+            sendCurrentInput()
+        }
     }
 
     private fun setBusy(busy: Boolean) {
         sendButton.text = if (busy) "Stop" else "Send"
         sendButton.icon = if (busy) AllIcons.Actions.Suspend else AllIcons.Actions.Execute
         sendButton.toolTipText = if (busy) "Stop this turn" else "Send (Enter)"
-        if (busy) statusLabel.text = "…thinking" else updateAnalyticsLabel()
+        if (busy) statusLabel.text = "…thinking" + queuedSuffix() else updateAnalyticsLabel()
     }
 
     /** Cumulative token/cost analytics for this session, plus the rate-limit window. */
@@ -643,6 +658,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         if (used != null && window != null && window > 0) {
             parts += "context ${formatTokens(used)} / ${formatTokens(window)} " +
                 "(${fmt("%.0f", used * 100.0 / window)}%)"
+        }
+        if (session.isBusy) {
+            // Mid-turn the useful number is how much is still waiting, not what
+            // the conversation has cost so far.
+            statusLabel.text = "…thinking" + queuedSuffix()
+            return
         }
         statusLabel.text = if (parts.isEmpty()) " " else parts.joinToString("  ·  ")
         statusLabel.toolTipText =
@@ -899,23 +920,71 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
     private fun sendCurrentInput() {
         val prompt = inputArea.text.trim()
-        if (prompt.isEmpty() || session.isBusy) return
-        if (prompt.startsWith("/") && handleSlashCommand(prompt)) {
-            inputArea.text = ""
+        if (prompt.isEmpty()) return
+        inputArea.text = ""
+        submitText(prompt)
+    }
+
+    /**
+     * Takes what the user typed, now or when there is room for it.
+     *
+     * Typing during a turn used to be answered with "this session is already
+     * waiting on a response" and the text was gone — the thought you had while
+     * reading, lost because the reading was still happening. It waits its turn
+     * instead.
+     *
+     * Everything queues, slash commands included. One rule is easier to live
+     * with than a list of exceptions, and `/clear` arriving in the middle of
+     * the turn it was meant to follow would be its own surprise.
+     */
+    internal fun submitText(text: String) {
+        val prompt = text.trim()
+        if (prompt.isEmpty()) return
+
+        if (session.isBusy) {
+            queued.add(prompt)
+            // Shown straight away: it is going to be sent verbatim, and a
+            // message that vanishes on Enter is indistinguishable from one that
+            // was dropped.
+            addAndRender(ChatMessage(Role.USER, prompt))
+            updateAnalyticsLabel()
             return
         }
-        inputArea.text = ""
-        sendPrompt(prompt)
+        dispatch(prompt, alreadyShown = false)
+    }
+
+    private fun dispatch(prompt: String, alreadyShown: Boolean) {
+        if (prompt.startsWith("/") && handleSlashCommand(prompt)) return
+        sendPrompt(prompt, alreadyShown)
+    }
+
+    /** Sends the next thing waiting, once the turn that was in the way has ended. */
+    private fun sendNextQueued() {
+        if (disposed || session.isBusy) return
+        val next = queued.removeFirstOrNull() ?: return
+        dispatch(next, alreadyShown = true)
+    }
+
+    /** Messages typed while a turn was running, in the order they were typed. */
+    private val queued = ArrayDeque<String>()
+
+    internal val queuedCount: Int get() = queued.size
+
+    private fun queuedSuffix(): String = when (queued.size) {
+        0 -> ""
+        1 -> "  ·  1 queued"
+        else -> "  ·  ${queued.size} queued"
     }
 
     /**
      * Sends [prompt] as a turn. Separate from the input box because a granted
      * permission asks the same question again without anyone retyping it.
      */
-    private fun sendPrompt(prompt: String) {
+    private fun sendPrompt(prompt: String, alreadyShown: Boolean = false) {
         if (prompt.isBlank() || session.isBusy) return
 
-        addAndRender(ChatMessage(Role.USER, prompt))
+        // A queued message is already in the transcript from when it was typed.
+        if (!alreadyShown) addAndRender(ChatMessage(Role.USER, prompt))
 
         val assistantMessage = ChatMessage(Role.ASSISTANT, "", isStreaming = true)
         val assistantIndex = addAndRender(assistantMessage)
@@ -1085,6 +1154,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     }
 
                     setBusy(false)
+                    sendNextQueued()
                 }
             }
 
@@ -1094,6 +1164,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     assistantMessage.text += "\n\n**Error:** $message"
                     repaintNow()
                     setBusy(false)
+                    sendNextQueued()
                 }
             }
         })

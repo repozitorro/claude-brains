@@ -63,6 +63,42 @@ class ChatPanelSmokeTest : BasePlatformTestCase() {
         }
     }
 
+    fun testTypingDuringATurnQueuesInsteadOfLosingIt() {
+        // What used to happen: "this session is already waiting on a response",
+        // and the thought you had while reading the answer was gone. Nothing is
+        // sent here — the session is marked busy, which is the branch under test.
+        val manager = project.getService(ClaudeSessionManager::class.java)
+        val session = manager.createSession("Queue")
+        val panel = ChatPanel(project, session)
+        session.isBusy = true
+
+        panel.submitText("and also fix the tests")
+        panel.submitText("and rename that class")
+
+        assertEquals(2, panel.queuedCount)
+        // Shown as it was typed: a message that disappears on Enter cannot be
+        // told apart from one that was dropped.
+        assertEquals(
+            listOf("and also fix the tests", "and rename that class"),
+            session.messages.map { it.text }
+        )
+
+        Disposer.dispose(panel)
+    }
+
+    fun testBlankInputIsNotQueued() {
+        val manager = project.getService(ClaudeSessionManager::class.java)
+        val session = manager.createSession("Blank")
+        val panel = ChatPanel(project, session)
+        session.isBusy = true
+
+        panel.submitText("   ")
+        panel.submitText("")
+
+        assertEquals(0, panel.queuedCount)
+        Disposer.dispose(panel)
+    }
+
     fun testPanelBuildsForARestoredSessionWithPinnedSettings() {
         val manager = project.getService(ClaudeSessionManager::class.java)
         val session = manager.createSession("Restored").apply {
