@@ -109,6 +109,14 @@ object MessageRenderer {
                 .append(link(msgIndex, "revertall", -1, "revert all", danger = true))
                 .append("</li>")
         }
+        // Everything from here on, for when the wrong turn was several messages
+        // back. Offered on every edited message; the handler decides whether
+        // there is anything later to undo.
+        if (withLinks && edits.any { it.isResolved && it.canRevert }) {
+            rows.append("<li class='cb-edit'>")
+                .append(link(msgIndex, "restorehere", -1, "restore files to before this", danger = true))
+                .append("</li>")
+        }
         return "<ul class='cb-edits'>$rows</ul>"
     }
 

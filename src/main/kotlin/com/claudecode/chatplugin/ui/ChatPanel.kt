@@ -8,6 +8,7 @@ import com.claudecode.chatplugin.model.FileEdit
 import com.claudecode.chatplugin.model.ModelChoice
 import com.claudecode.chatplugin.model.PermissionChoice
 import com.claudecode.chatplugin.model.PermissionRequest
+import com.claudecode.chatplugin.review.ConversationRestore
 import com.claudecode.chatplugin.review.ProjectProblems
 import com.claudecode.chatplugin.model.Role
 import com.claudecode.chatplugin.model.ToolCall
@@ -860,6 +861,64 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     /**
+     * Puts every file back to how it stood before the message at [index].
+     *
+     * Newest edit first: later ones were written on top of earlier ones, and
+     * undoing them in the order they happened would restore text that was never
+     * on disk.
+     */
+    private fun restoreFilesToBefore(index: Int) {
+        val edits = ConversationRestore.editsToRevert(session.messages, index)
+        val revertible = edits.filter { it.canRevert }
+        if (revertible.isEmpty()) {
+            addSystemBubble("Nothing here can be restored — none of these edits can be undone exactly.")
+            return
+        }
+
+        val files = ConversationRestore.affectedFiles(edits)
+        val skipped = edits.size - revertible.size
+        val confirmed = com.intellij.openapi.ui.MessageDialogBuilder
+            .yesNo(
+                "Restore files to before this message?",
+                buildString {
+                    append(files.size).append(if (files.size == 1) " file" else " files")
+                    append(" will go back to how they were before this point: ")
+                    append(files.joinToString(", "))
+                    append(".\n\n")
+                    if (skipped > 0) {
+                        append(skipped)
+                        append(if (skipped == 1) " later edit cannot" else " later edits cannot")
+                        append(" be undone exactly and will be left as they are.\n\n")
+                    }
+                    append("The conversation itself is not touched — Claude still remembers all of it.")
+                }
+            )
+            .yesText("Restore")
+            .noText("Keep")
+            .icon(AllIcons.General.WarningDialog)
+            .ask(project)
+        if (!confirmed) return
+
+        val restored = revertible.count { DiffReviewer.revert(project, it) }
+
+        // The review markers describe changes that are no longer in the file.
+        // Dropping them leaves the editor honest without touching content.
+        files.forEach { name ->
+            revertible.firstOrNull { it.fileName == name }?.filePath?.let { path ->
+                com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(path)
+                    ?.let { reviewService.acceptFile(it) }
+            }
+        }
+
+        addSystemBubble(
+            "Restored $restored of ${revertible.size} " +
+                (if (revertible.size == 1) "edit" else "edits") +
+                ". The conversation is unchanged — Claude still has all of it in context, " +
+                "so say what you want done differently."
+        )
+    }
+
+    /**
      * Looks for problems in the changed files once the IDE has had a moment to
      * find them, and offers them back to Claude.
      *
@@ -1290,6 +1349,11 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }
             if (answer != null) {
                 answerPermission(message, msgIndex, answer)
+                return@invokeLater
+            }
+
+            if (parts[2] == "restorehere") {
+                restoreFilesToBefore(msgIndex)
                 return@invokeLater
             }
 
