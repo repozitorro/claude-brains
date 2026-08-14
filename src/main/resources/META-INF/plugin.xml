@@ -62,11 +62,6 @@
 
         <notificationGroup id="Claude Brains" displayType="BALLOON"/>
 
-        <!-- The review strip over an editor. The platform positions it, layers
-             it and shows/hides it; the provider only decides when the file has
-             something left to review. -->
-        <editorFloatingToolbarProvider
-            implementation="com.claudecode.chatplugin.review.ReviewFloatingToolbarProvider"/>
     </extensions>
 
     <actions>
