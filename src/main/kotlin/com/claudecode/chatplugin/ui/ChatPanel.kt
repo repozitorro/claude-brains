@@ -264,6 +264,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }, BorderLayout.WEST)
             add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0)).apply {
                 isOpaque = false
+                add(
+                    iconButton(
+                        AllIcons.FileTypes.Text,
+                        "Project rules — CLAUDE.md, read at the start of every conversation here"
+                    ) { openProjectRules() }
+                )
                 add(iconButton(AllIcons.Actions.Copy, "Copy the conversation as Markdown") { copyTranscript() })
                 add(iconButton(AllIcons.ToolbarDecorator.Export, "Export the conversation to a Markdown file") { exportTranscript() })
             }, BorderLayout.EAST)
@@ -463,6 +469,51 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 if (action == MOVE) inputArea.replaceSelection("")
             }
         }
+    }
+
+    /**
+     * Opens the project's CLAUDE.md, offering to create it when there isn't one.
+     *
+     * Creating is asked about rather than done: a file at the project root is
+     * the kind of thing that ends up committed, and Claude reads it on every
+     * turn from then on.
+     */
+    private fun openProjectRules() {
+        val basePath = project.basePath ?: return
+        val file = ProjectRules.fileIn(basePath)
+
+        if (!file.exists()) {
+            val create = com.intellij.openapi.ui.MessageDialogBuilder
+                .yesNo(
+                    "Create ${ProjectRules.FILE_NAME}?",
+                    "There is no ${ProjectRules.FILE_NAME} in this project yet.\n\n" +
+                        "It holds standing instructions for Claude — how to build and test, what to " +
+                        "leave alone — and the CLI reads it at the start of every conversation here.\n\n" +
+                        "It will be created at the project root, with a short outline to fill in."
+                )
+                .yesText("Create")
+                .noText("Cancel")
+                .ask(project)
+            if (!create) return
+
+            val written = runCatching { file.writeText(ProjectRules.template(project.name)) }
+            if (written.isFailure) {
+                Messages.showErrorDialog(
+                    project,
+                    "Could not create ${file.path}: ${written.exceptionOrNull()?.message}",
+                    "Claude Brains"
+                )
+                return
+            }
+        }
+
+        val virtualFile = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+            .refreshAndFindFileByPath(file.path)
+        if (virtualFile == null) {
+            statusLabel.text = "could not open ${ProjectRules.FILE_NAME}"
+            return
+        }
+        com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(virtualFile, true)
     }
 
     private fun copyTranscript() {
