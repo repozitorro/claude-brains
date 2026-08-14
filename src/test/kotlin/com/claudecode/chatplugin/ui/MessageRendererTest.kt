@@ -108,6 +108,67 @@ class MessageRendererTest {
     }
 
     @Test
+    fun `the change itself is shown, and the code in it is escaped`() {
+        // These lines are code Claude wrote or quoted from a file, so they reach
+        // the page as markup unless neutralised — the same hazard as the reply.
+        val edit = FileEdit("App.kt", "Edit", null).apply {
+            ops.add(EditOp("a", "b", null, false))
+            resolve("b")
+            preview = listOf(
+                com.claudecode.chatplugin.model.DiffLine(
+                    com.claudecode.chatplugin.model.DiffLine.Kind.REMOVED,
+                    "<script>alert(1)</script>"
+                ),
+                com.claudecode.chatplugin.model.DiffLine(
+                    com.claudecode.chatplugin.model.DiffLine.Kind.ADDED,
+                    "val x = 1"
+                )
+            )
+        }
+
+        val html = MessageRenderer.fragment(assistant(edit), msgIndex = 0, streaming = false)
+
+        assertTrue(html, html.contains("cb-diff"))
+        assertTrue("the added line is there", html.contains("+ val x = 1"))
+        assertFalse("but not as markup", html.contains("<script>"))
+        assertTrue(html, html.contains("&lt;script&gt;"))
+    }
+
+    @Test
+    fun `plus and minus carry the meaning without any styling`() {
+        // The Swing fallback renders HTML 3.2 and drops the tinted grounds
+        // entirely, so the prefixes have to say which side a line is on.
+        val edit = FileEdit("App.kt", "Edit", null).apply {
+            ops.add(EditOp("a", "b", null, false))
+            resolve("b")
+            preview = listOf(
+                com.claudecode.chatplugin.model.DiffLine(
+                    com.claudecode.chatplugin.model.DiffLine.Kind.REMOVED, "old"
+                ),
+                com.claudecode.chatplugin.model.DiffLine(
+                    com.claudecode.chatplugin.model.DiffLine.Kind.ADDED, "new"
+                )
+            )
+        }
+
+        val html = MessageRenderer.fragment(assistant(edit), 0, streaming = false)
+
+        assertTrue(html, html.contains("- old"))
+        assertTrue(html, html.contains("+ new"))
+    }
+
+    @Test
+    fun `a streaming message shows no change preview yet`() {
+        // Nothing has been written to the file at that point.
+        val edit = FileEdit("App.kt", "Edit", null).apply {
+            ops.add(EditOp("a", "b", null, false))
+        }
+        val msg = assistant(edit).apply { isStreaming = true }
+
+        assertFalse(MessageRenderer.fragment(msg, 0, streaming = true).contains("cb-diff"))
+    }
+
+    @Test
     fun `tool call status is reflected and text is escaped`() {
         val msg = ChatMessage(Role.ASSISTANT, "", toolCalls = mutableListOf(
             ToolCall("id1", "Bash echo <script>", ToolCall.Status.ERROR)

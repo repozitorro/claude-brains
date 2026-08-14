@@ -1259,6 +1259,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                             null
                         }
                         edit.resolve(after)
+                        // Worked out once, here, rather than on every repaint of
+                        // the conversation.
+                        edit.preview = com.claudecode.chatplugin.review.EditPreview.of(edit)
                     }
                     repaintNow()
 
