@@ -777,9 +777,30 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // Without a pattern there is nothing specific to grant, so the message
         // stands on its own rather than offering a button that would do nothing.
         if (pattern != null) {
-            message.permissionRequest = PermissionRequest(denials, pattern, prompt)
+            // Only a command can be handed to a shell; a refused Write has
+            // nothing to run, so that button is simply not offered.
+            val command = denials.firstOrNull { it.toolName in COMMAND_TOOLS }?.detail
+                ?.takeIf { TerminalRunner.isAvailable() }
+            message.permissionRequest = PermissionRequest(denials, pattern, prompt, command)
         }
         addAndRender(message)
+    }
+
+    /**
+     * Hands the refused command to a shell, leaving the permission alone.
+     *
+     * Running it yourself grants nothing, so the question stays open: you may
+     * still want to allow it afterwards, or not.
+     */
+    private fun runInTerminal(message: ChatMessage) {
+        val command = message.permissionRequest?.command ?: return
+        if (TerminalRunner.run(project, command)) {
+            statusLabel.text = "running in terminal"
+            return
+        }
+        // No terminal to hand it to, so hand it over the only other way.
+        CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(command))
+        addSystemBubble("Couldn't open a terminal, so the command is on your clipboard:\n\n```\n$command\n```")
     }
 
     /** Applies the user's answer, and asks again when it was yes. */
@@ -1053,6 +1074,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private companion object {
         private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(ChatPanel::class.java)
         val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
+
+        /** Tools whose refused input is a shell command, so it can be run as one. */
+        val COMMAND_TOOLS = setOf("Bash", "PowerShell")
         const val RENDER_INTERVAL_MS = 50
         const val LIMIT_TICK_MS = 60_000
     }
@@ -1069,6 +1093,11 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             val msgIndex = parts[1].toIntOrNull() ?: return@invokeLater
             val editIndex = parts[3].toIntOrNull() ?: return@invokeLater
             val message = session.messages.getOrNull(msgIndex) ?: return@invokeLater
+
+            if (parts[2] == "permterminal") {
+                runInTerminal(message)
+                return@invokeLater
+            }
 
             val answer = when (parts[2]) {
                 "permallow" -> PermissionRequest.Answer.ALLOWED_HERE

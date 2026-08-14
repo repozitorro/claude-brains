@@ -32,7 +32,10 @@ intellij {
     version.set("2024.1")
     type.set("IC") // IntelliJ Community as the base platform
 
-    plugins.set(listOf(/* no extra bundled plugins required */))
+    // The bundled terminal, so a blocked command can be handed to a real shell.
+    // Declared optional in plugin.xml: it can be switched off, and losing it
+    // should cost that one button rather than the plugin.
+    plugins.set(listOf("terminal"))
 }
 
 /**

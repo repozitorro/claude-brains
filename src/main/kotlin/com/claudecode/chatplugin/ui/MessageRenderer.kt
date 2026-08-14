@@ -134,6 +134,9 @@ object MessageRenderer {
             "<span class='cb-perm-ask'>Allow <code>${escape(request.pattern)}</code>?</span>" +
             link(msgIndex, "permallow", 0, "Allow in this chat") +
             link(msgIndex, "permalways", 0, "Always allow") +
+            // Running it yourself is not a permission — it grants nothing and
+            // changes no setting — so it sits apart from the two that do.
+            (request.command?.let { link(msgIndex, "permterminal", 0, "Run in terminal") } ?: "") +
             link(msgIndex, "permdeny", 0, "No", danger = true) +
             "</div>"
     }

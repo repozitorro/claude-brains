@@ -1,0 +1,8 @@
+<!--
+  Loaded only when the bundled Terminal plugin is present.
+
+  It supplies the shell a blocked command can be handed to. Optional because
+  the terminal can be switched off, and without it the chat still works — the
+  command is offered on the clipboard instead.
+-->
+<idea-plugin />

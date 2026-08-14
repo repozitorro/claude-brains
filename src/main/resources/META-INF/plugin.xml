@@ -30,6 +30,10 @@
          isn't shipped for every OS/architecture. -->
     <depends optional="true" config-file="claude-brains-jcef.xml">com.intellij.modules.jcef</depends>
 
+    <!-- Supplies the shell that a refused command can be handed to. Optional:
+         the terminal is a bundled plugin and can be turned off. -->
+    <depends optional="true" config-file="claude-brains-terminal.xml">org.jetbrains.plugins.terminal</depends>
+
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Claude Brains"
                     secondary="true"
