@@ -94,6 +94,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         }
 
     private val fileSearch = ProjectFileSearch(project, this)
+    private val symbolSearch = ProjectSymbolSearch(project, this)
 
     private val inputArea = JBTextArea(3, 40).apply {
         lineWrap = true
@@ -343,6 +344,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // Walk the project now, off the EDT, so the first `@` has something to
         // offer instead of paying for the walk mid-keystroke.
         fileSearch.warmUp()
+        symbolSearch.warmUp()
 
         // The review bar subscribes to the review service, so it has to be
         // released with this panel rather than outliving it.
@@ -630,13 +632,31 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     private fun showFilePopup(query: String) {
-        val matches = fileSearch.search(query)
+        val files = fileSearch.search(query)
+        // Symbols after files: you usually mean a path, and when you mean a
+        // class you will recognise it lower down. Marked so the two kinds of
+        // entry can be told apart at a glance.
+        val symbols = symbolSearch.search(query).map { SYMBOL_PREFIX + it }
+        val matches = files + symbols
         if (matches.isEmpty()) return
+
         val popup = JBPopupFactory.getInstance().createListPopup(
-            object : com.intellij.openapi.ui.popup.util.BaseListPopupStep<String>("Project Files", matches) {
+            object : com.intellij.openapi.ui.popup.util.BaseListPopupStep<String>("Project Files & Symbols", matches) {
                 override fun getTextFor(value: String) = value
                 override fun onChosen(selectedValue: String, finalChoice: Boolean): PopupStep<*>? {
-                    insertFileReference(selectedValue, query)
+                    if (selectedValue.startsWith(SYMBOL_PREFIX)) {
+                        val name = selectedValue.removePrefix(SYMBOL_PREFIX)
+                        // The file is what Claude can act on; the symbol was
+                        // only how it was found.
+                        val path = symbolSearch.fileOf(name)
+                        if (path == null) {
+                            statusLabel.text = "couldn't locate $name"
+                            return FINAL_CHOICE
+                        }
+                        insertFileReference(path, query)
+                    } else {
+                        insertFileReference(selectedValue, query)
+                    }
                     return FINAL_CHOICE
                 }
             }
@@ -1087,11 +1107,40 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     /**
+     * Writes unsaved editor content to disk before the CLI reads it.
+     *
+     * The CLI opens files from disk. Anything typed and not saved is invisible
+     * to it — so asking about a file you have just edited got an answer about
+     * the version before your edit, with nothing to suggest that had happened.
+     *
+     * Only this project's files, and only the ones actually unsaved: saving
+     * every open document in the IDE would reach into work that has nothing to
+     * do with the question being asked.
+     */
+    private fun saveProjectDocuments() {
+        val documentManager = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+        val index = com.intellij.openapi.roots.ProjectFileIndex.getInstance(project)
+
+        val ours = documentManager.unsavedDocuments.filter { document ->
+            val file = documentManager.getFile(document) ?: return@filter false
+            runCatching { index.isInContent(file) }.getOrDefault(false)
+        }
+        if (ours.isEmpty()) return
+
+        ApplicationManager.getApplication().runWriteAction {
+            ours.forEach { runCatching { documentManager.saveDocument(it) } }
+        }
+        statusLabel.text = if (ours.size == 1) "saved 1 file" else "saved ${ours.size} files"
+    }
+
+    /**
      * Sends [prompt] as a turn. Separate from the input box because a granted
      * permission asks the same question again without anyone retyping it.
      */
     private fun sendPrompt(prompt: String, alreadyShown: Boolean = false) {
         if (prompt.isBlank() || session.isBusy) return
+
+        saveProjectDocuments()
 
         // A queued message is already in the transcript from when it was typed.
         if (!alreadyShown) addAndRender(ChatMessage(Role.USER, prompt))
@@ -1311,6 +1360,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
         /** Tools whose refused input is a shell command, so it can be run as one. */
         val COMMAND_TOOLS = setOf("Bash", "PowerShell")
+
+        /** Marks a symbol entry in the `@` popup, where everything else is a path. */
+        const val SYMBOL_PREFIX = "◆ "
         const val RENDER_INTERVAL_MS = 50
         const val LIMIT_TICK_MS = 60_000
 
@@ -1334,6 +1386,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
             if (parts[2] == "permterminal") {
                 runInTerminal(message)
+                return@invokeLater
+            }
+            if (parts[2] == "opensettings") {
+                cliService.openSettings()
                 return@invokeLater
             }
             if (parts[2] == "fixproblems") {

@@ -146,6 +146,9 @@ object MessageRenderer {
             // changes no setting — so it sits apart from the two that do.
             (request.command?.let { link(msgIndex, "permterminal", 0, "Run in terminal") } ?: "") +
             link(msgIndex, "permdeny", 0, "No", danger = true) +
+            // The long way round, one click instead of four: the message can
+            // describe the path to the setting, but it shouldn't have to.
+            link(msgIndex, "opensettings", 0, "Settings…") +
             "</div>"
     }
 

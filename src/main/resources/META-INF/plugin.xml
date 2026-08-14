@@ -118,6 +118,11 @@
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift C"/>
         </action>
 
+        <action id="ClaudeCodeChat.SendTerminal"
+                class="com.claudecode.chatplugin.actions.SendTerminalToClaudeAction"
+                text="Claude Brains: Send Terminal Output to Claude"
+                description="Put the terminal's selection, or the end of its output, into the chat"/>
+
         <action id="ClaudeCodeChat.UsageStats"
                 class="com.claudecode.chatplugin.actions.ShowUsageStatsAction"
                 text="Claude Brains: Usage Statistics"
