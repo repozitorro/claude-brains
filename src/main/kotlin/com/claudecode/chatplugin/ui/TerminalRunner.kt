@@ -38,6 +38,11 @@ object TerminalRunner {
         if (!isAvailable()) return false
         return try {
             val manager = org.jetbrains.plugins.terminal.TerminalToolWindowManager.getInstance(project)
+            // Deprecated as of 2026.2 and knowingly kept: whatever replaces it
+            // arrived after 2024.1, which is the floor sinceBuild promises, so
+            // reaching for it would compile here and fail there. Revisit when
+            // the floor moves — the verifier will keep reporting it until then.
+            @Suppress("DEPRECATION")
             val widget = manager.createShellWidget(project.basePath, tabName, true, true)
             val shell = org.jetbrains.plugins.terminal.ShellTerminalWidget.asShellJediTermWidget(widget)
             if (shell == null) {

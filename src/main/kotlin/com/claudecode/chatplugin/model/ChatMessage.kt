@@ -17,5 +17,7 @@ data class ChatMessage(
     val edits: MutableList<FileEdit> = mutableListOf(),
     var isStreaming: Boolean = false,
     /** A refusal the user can answer, shown with Allow / Deny beneath this message. */
-    var permissionRequest: PermissionRequest? = null
+    var permissionRequest: PermissionRequest? = null,
+    /** Errors the IDE found in the changed files, offered back to Claude with one click. */
+    var problems: List<com.claudecode.chatplugin.review.ProjectProblems.Problem>? = null
 )

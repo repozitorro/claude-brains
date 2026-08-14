@@ -168,6 +168,11 @@ object MessageRenderer {
             // Below the explanation, where the decision belongs: you read what
             // was refused and why, then answer.
             message.permissionRequest?.let { body.append(permissionBlock(it, msgIndex)) }
+            message.problems?.takeIf { it.isNotEmpty() }?.let {
+                body.append("<div class='cb-perm'>")
+                    .append(link(msgIndex, "fixproblems", 0, "Ask Claude to fix these"))
+                    .append("</div>")
+            }
         }
         return body.toString()
     }

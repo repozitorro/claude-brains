@@ -8,6 +8,7 @@ import com.claudecode.chatplugin.model.FileEdit
 import com.claudecode.chatplugin.model.ModelChoice
 import com.claudecode.chatplugin.model.PermissionChoice
 import com.claudecode.chatplugin.model.PermissionRequest
+import com.claudecode.chatplugin.review.ProjectProblems
 import com.claudecode.chatplugin.model.Role
 import com.claudecode.chatplugin.model.ToolCall
 import com.intellij.icons.AllIcons
@@ -787,6 +788,53 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     }
 
     /**
+     * Looks for problems in the changed files once the IDE has had a moment to
+     * find them, and offers them back to Claude.
+     *
+     * Timed rather than event-driven on purpose: analysis runs per file as each
+     * opens, so there is no single "finished" moment to wait for, and being a
+     * few seconds late costs nothing here. Checked twice — the second pass
+     * catches the file that was still being analysed on the first.
+     */
+    private fun scheduleProblemCheck(edits: List<FileEdit>) {
+        val files = edits.mapNotNull {
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(it.filePath)
+        }
+        if (files.isEmpty()) return
+
+        var attempt = 0
+        val timer = Timer(PROBLEM_CHECK_DELAY_MS) { event ->
+            attempt++
+            if (disposed || project.isDisposed) {
+                (event.source as? Timer)?.stop()
+                return@Timer
+            }
+            val problems = ProjectProblems.collect(project, files)
+            if (problems.isNotEmpty()) {
+                (event.source as? Timer)?.stop()
+                reportProblems(problems)
+            } else if (attempt >= PROBLEM_CHECK_ATTEMPTS) {
+                (event.source as? Timer)?.stop()
+            }
+        }
+        timer.isRepeats = true
+        timer.start()
+    }
+
+    /** Shows what the IDE found, with one click to hand it back. */
+    private fun reportProblems(problems: List<ProjectProblems.Problem>) {
+        val listed = problems.joinToString("\n") { "- `${it.fileName}:${it.line}` — ${it.description}" }
+        val message = ChatMessage(
+            Role.SYSTEM,
+            "⚠️ The IDE reports ${problems.size} " +
+                (if (problems.size == 1) "error" else "errors") +
+                " in the files Claude changed:\n\n$listed"
+        )
+        message.problems = problems
+        addAndRender(message)
+    }
+
+    /**
      * Hands the refused command to a shell, leaving the permission alone.
      *
      * Running it yourself grants nothing, so the question stays open: you may
@@ -986,6 +1034,11 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     }
                     repaintNow()
 
+                    // The IDE analyses the changed files as they open, so what it
+                    // knows isn't known yet. Ask again shortly rather than
+                    // reporting an empty result the moment the turn ends.
+                    if (assistantMessage.edits.isNotEmpty()) scheduleProblemCheck(assistantMessage.edits)
+
                     // Hand the edits to inline review: this opens the files and
                     // marks each change up for accept/reject in the editor.
                     if (assistantMessage.edits.isNotEmpty()) {
@@ -1079,6 +1132,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         val COMMAND_TOOLS = setOf("Bash", "PowerShell")
         const val RENDER_INTERVAL_MS = 50
         const val LIMIT_TICK_MS = 60_000
+
+        /** How long the IDE gets to analyse a changed file before we look. */
+        const val PROBLEM_CHECK_DELAY_MS = 2_500
+        const val PROBLEM_CHECK_ATTEMPTS = 3
     }
 
     /**
@@ -1096,6 +1153,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
             if (parts[2] == "permterminal") {
                 runInTerminal(message)
+                return@invokeLater
+            }
+            if (parts[2] == "fixproblems") {
+                message.problems?.takeIf { it.isNotEmpty() }?.let { sendPrompt(ProjectProblems.describe(it)) }
                 return@invokeLater
             }
 
