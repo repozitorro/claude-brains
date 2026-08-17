@@ -50,14 +50,19 @@ object CliRunner {
         command: List<String>,
         workingDir: File? = null,
         timeoutSeconds: Long,
-        stdin: String? = null
+        stdin: String? = null,
+        /** Overrides for the child's environment; the CLI may not be on the IDE's PATH. */
+        environment: Map<String, String>? = null
     ): Result {
         // On Windows a bare "claude" is really claude.cmd, which CreateProcess
         // will not find on its own.
         val launched = listOf(ExecutableResolver.resolve(command.first())) + command.drop(1)
         val process = try {
             ProcessBuilder(launched)
-                .apply { if (workingDir != null) directory(workingDir) }
+                .apply {
+                    if (workingDir != null) directory(workingDir)
+                    environment?.let { this.environment().putAll(it) }
+                }
                 .redirectErrorStream(true)
                 .start()
         } catch (e: Exception) {

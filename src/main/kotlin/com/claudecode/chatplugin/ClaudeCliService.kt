@@ -103,7 +103,12 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         val workingDir = project.basePath?.let { java.io.File(it) }
         val process = try {
             ProcessBuilder(command)
-                .apply { if (workingDir != null) directory(workingDir) }
+                .apply {
+                    if (workingDir != null) directory(workingDir)
+                    // The IDE's own environment is not a terminal's, and a tool
+                    // installed for this user only may not be on either.
+                    environment().putAll(com.claudecode.chatplugin.cli.CliEnvironment.forProject(project))
+                }
                 .redirectErrorStream(false)
                 .start()
         } catch (e: java.io.IOException) {
@@ -205,7 +210,8 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         val result = CliRunner.run(
             command = listOf(command, "mcp", "list"),
             workingDir = project.basePath?.let { java.io.File(it) },
-            timeoutSeconds = MCP_LIST_TIMEOUT_SECONDS
+            timeoutSeconds = MCP_LIST_TIMEOUT_SECONDS,
+            environment = com.claudecode.chatplugin.cli.CliEnvironment.forProject(project)
         )
         return when {
             result.failure != null -> "Could not run '$command mcp list': ${result.failure.message}"

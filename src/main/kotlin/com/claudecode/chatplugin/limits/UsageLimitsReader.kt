@@ -1,6 +1,7 @@
 package com.claudecode.chatplugin.limits
 
 import com.claudecode.chatplugin.ClaudeCodeSettings
+import com.claudecode.chatplugin.cli.CliEnvironment
 import com.claudecode.chatplugin.cli.CliRunner
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -27,7 +28,8 @@ object UsageLimitsReader {
             command = listOf(command),
             workingDir = project.basePath?.let { File(it) },
             timeoutSeconds = TIMEOUT_SECONDS,
-            stdin = "/usage\n"
+            stdin = "/usage\n",
+            environment = CliEnvironment.forProject(project)
         )
         if (result.failure != null) {
             log.warn("Could not read the usage report: ${result.failure.message}")

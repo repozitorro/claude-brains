@@ -1,6 +1,7 @@
 package com.claudecode.chatplugin.auth
 
 import com.claudecode.chatplugin.ClaudeCodeSettings
+import com.claudecode.chatplugin.cli.CliEnvironment
 import com.claudecode.chatplugin.cli.CliRunner
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.openapi.components.Service
@@ -30,7 +31,8 @@ class ClaudeAuth(private val project: Project) {
         val result = CliRunner.run(
             command = listOf(exe, "auth", "status"),
             workingDir = project.basePath?.let { java.io.File(it) },
-            timeoutSeconds = STATUS_TIMEOUT_SECONDS
+            timeoutSeconds = STATUS_TIMEOUT_SECONDS,
+            environment = CliEnvironment.forProject(project)
         )
         return when {
             result.failure != null -> AuthStatus.Unavailable(

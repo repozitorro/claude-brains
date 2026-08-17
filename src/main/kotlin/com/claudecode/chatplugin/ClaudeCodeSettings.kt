@@ -25,7 +25,21 @@ class ClaudeCodeSettings : PersistentStateComponent<ClaudeCodeSettings.State> {
          */
         var permissionMode: String = "acceptEdits",
         var allowedTools: String = "",      // space/comma list passed to --allowedTools, empty = don't pass
-        var disallowedTools: String = ""    // passed to --disallowedTools, empty = don't pass
+        var disallowedTools: String = "",   // passed to --disallowedTools, empty = don't pass
+
+        /**
+         * Directories added to the front of PATH for the CLI.
+         *
+         * For tools installed for the current user only — pip's `--user`, npm's
+         * prefix — whose executables land somewhere nothing ever added to PATH.
+         * Fixing that on the machine works too, but means editing system
+         * settings and restarting the IDE to pick them up; this takes effect on
+         * the next turn.
+         */
+        var extraPath: String = "",
+
+        /** `KEY=VALUE` per line, for the CLI's environment. */
+        var extraEnv: String = ""
     )
 
     private var state = State()
@@ -54,6 +68,14 @@ class ClaudeCodeSettings : PersistentStateComponent<ClaudeCodeSettings.State> {
     var disallowedTools: String
         get() = state.disallowedTools
         set(value) { state.disallowedTools = value }
+
+    var extraPath: String
+        get() = state.extraPath
+        set(value) { state.extraPath = value }
+
+    var extraEnv: String
+        get() = state.extraEnv
+        set(value) { state.extraEnv = value }
 
     companion object {
         fun getInstance(project: Project): ClaudeCodeSettings =

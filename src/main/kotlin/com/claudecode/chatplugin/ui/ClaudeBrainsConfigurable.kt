@@ -32,6 +32,10 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
     }
     private val allowedField = JBTextField()
     private val disallowedField = JBTextField()
+    // Multi-line: one entry per line is easier to read than a separator-joined
+    // string, and Windows paths contain the separator a single line would use.
+    private val extraPathField = JBTextArea(3, 40)
+    private val extraEnvField = JBTextArea(2, 40)
 
     private val mcpArea = JBTextArea(5, 40).apply {
         isEditable = false
@@ -62,6 +66,19 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             .addLabeledComponent("Permission mode:", permissionCombo, 1, false)
             .addLabeledComponent("Allowed tools (space/comma):", allowedField, 1, false)
             .addLabeledComponent("Disallowed tools (space/comma):", disallowedField, 1, false)
+            .addLabeledComponent("Extra PATH entries:", JBScrollPane(extraPathField), 1, false)
+            .addComponent(JLabel(
+                "<html><small>One directory per line, searched before the rest of PATH. " +
+                    "For a tool installed for your user only, whose executable sits somewhere nothing " +
+                    "ever put on PATH — the usual homes for those (<code>~/.local/bin</code>, npm's " +
+                    "prefix, cargo, bun, pip's <code>--user</code> scripts) are already added on the " +
+                    "end when they exist, so try without this first. Takes effect on the next message, " +
+                    "with no restart.</small></html>"
+            ))
+            .addLabeledComponent("Extra environment:", JBScrollPane(extraEnvField), 1, false)
+            .addComponent(JLabel(
+                "<html><small><code>KEY=VALUE</code> per line, passed to the CLI.</small></html>"
+            ))
             .addComponent(JLabel(
                 "<html><small>In the tool lists you can just write a command — <code>git</code> allows " +
                     "<code>git add -A</code> through whichever shell runs it. A capitalised name means the " +
@@ -95,7 +112,9 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             (modelCombo.selectedItem as ModelChoice).id.orEmpty() != settings.defaultModel ||
             (permissionCombo.selectedItem as PermissionChoice).id.orEmpty() != settings.permissionMode ||
             allowedField.text != settings.allowedTools ||
-            disallowedField.text != settings.disallowedTools
+            disallowedField.text != settings.disallowedTools ||
+            extraPathField.text != settings.extraPath ||
+            extraEnvField.text != settings.extraEnv
 
     override fun apply() {
         settings.claudeCommand = commandField.text.trim().ifBlank { "claude" }
@@ -103,6 +122,8 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
         settings.permissionMode = (permissionCombo.selectedItem as PermissionChoice).id.orEmpty()
         settings.allowedTools = allowedField.text.trim()
         settings.disallowedTools = disallowedField.text.trim()
+        settings.extraPath = extraPathField.text.trim()
+        settings.extraEnv = extraEnvField.text.trim()
     }
 
     override fun reset() {
@@ -111,5 +132,7 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
         permissionCombo.selectedItem = PermissionChoice.forId(settings.permissionMode)
         allowedField.text = settings.allowedTools
         disallowedField.text = settings.disallowedTools
+        extraPathField.text = settings.extraPath
+        extraEnvField.text = settings.extraEnv
     }
 }
