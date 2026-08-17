@@ -120,8 +120,19 @@ html, body {
   margin: 3px 0 6px 13px; padding: 7px 9px;
   background: var(--user-bg); border: 1px solid var(--border); border-radius: var(--radius);
   font-family: var(--mono); font-size: 11px; line-height: 1.45;
-  white-space: pre-wrap; overflow-x: auto; max-height: 260px;
+  /* Both axes spelled out. With only overflow-x set, the other axis is left to
+     a computed value, and "it happens to scroll" is not the same as saying so. */
+  white-space: pre-wrap; overflow-x: auto; overflow-y: auto; max-height: 340px;
 }
+
+/* Stands in for the platform's disclosure marker, which is hidden above. */
+.cb-chev {
+  margin-left: auto; padding-left: 8px;
+  color: var(--muted); font-size: 13px; line-height: 1;
+  transition: transform .12s ease; transform-origin: 50% 50%;
+}
+details[open] > summary .cb-chev { transform: rotate(90deg); }
+.cb-act summary:hover .cb-chev { color: var(--fg); }
 
 /* ---------- File edits ---------- */
 .cb-edits { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -163,6 +174,32 @@ a.cb-btn.danger:hover { color: var(--err); border-color: var(--err); }
 .cb-perm-ask { font-size: 11px; color: var(--fg); }
 .cb-perm-done { font-size: 11px; color: var(--muted); }
 .cb-perm code { font-family: var(--mono); font-size: 11px; }
+
+/* ---------- Asked before it happens ---------- */
+/* A card, not a line: this one is holding the CLI still, and it should look
+   like something waiting on you rather than something scrolling past. */
+.cb-ask {
+  margin: 8px 0; padding: 9px 11px 8px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--user-bg);
+}
+.cb-ask[data-state='pending'] { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.cb-ask[data-state='skipped'] { opacity: .6; }
+.cb-ask-head { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.cb-ask-body {
+  font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--fg);
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow-y: auto;
+}
+.cb-ask-actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  margin-top: 9px; flex-wrap: wrap;
+}
+.cb-ask-done { font-size: 11px; color: var(--muted); }
+a.cb-btn.primary {
+  color: var(--fg); border-color: var(--muted);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+a.cb-btn.primary:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ---------- Code ---------- */
 .msg .body code {

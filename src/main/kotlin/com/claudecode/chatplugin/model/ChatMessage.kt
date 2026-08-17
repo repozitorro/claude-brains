@@ -18,6 +18,14 @@ data class ChatMessage(
     var isStreaming: Boolean = false,
     /** A refusal the user can answer, shown with Allow / Deny beneath this message. */
     var permissionRequest: PermissionRequest? = null,
+    /**
+     * A tool call the CLI has paused on, waiting to be told what to do.
+     *
+     * Unlike [permissionRequest] — which is a refusal being reconsidered after
+     * the fact — nothing has happened yet, and the CLI is holding the call open
+     * until this is answered.
+     */
+    var approvalRequest: com.claudecode.chatplugin.permissions.ApprovalRequest? = null,
     /** Errors the IDE found in the changed files, offered back to Claude with one click. */
     var problems: List<com.claudecode.chatplugin.review.ProjectProblems.Problem>? = null
 )

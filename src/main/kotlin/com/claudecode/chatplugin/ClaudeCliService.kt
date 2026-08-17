@@ -59,12 +59,19 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
             } finally {
                 session.isBusy = false
                 session.process = null
+                // However the turn ended, nothing is left to receive an answer.
+                com.claudecode.chatplugin.permissions.ApprovalService.getInstance(project)
+                    .cancelPending(session, "The turn ended before this was answered.")
             }
         }
     }
 
     /** Terminates the running CLI process for [session], if any (Stop button). */
     fun cancel(session: ClaudeSession) {
+        // Answered first: a question still open is a thread parked on it, and
+        // the process being asked is about to stop existing.
+        com.claudecode.chatplugin.permissions.ApprovalService.getInstance(project)
+            .cancelPending(session, "The turn was stopped.")
         session.process?.destroy()
     }
 
@@ -87,7 +94,17 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
                 .joinToString(" "),
             disallowedTools = settings.disallowedTools,
             model = session.selectedModel,
-            resumeId = session.cliSessionId.takeIf { allowResume }
+            resumeId = session.cliSessionId.takeIf { allowResume },
+            // In bypass mode there is nothing to ask about, so the endpoint is
+            // left out rather than named and never called.
+            approvalConfigPath = session.approvalEndpoint
+                ?.takeIf {
+                    ClaudeCommandBuilder.permissionMode(session.permissionMode, settings.permissionMode) !=
+                        "bypassPermissions"
+                }
+                ?.let {
+                    com.claudecode.chatplugin.permissions.ApprovalService.getInstance(project).mcpConfigPath(it)
+                }
         )
         val command = ClaudeCommandBuilder.build(request).toMutableList()
         // On Windows a bare "claude" is really claude.cmd, which CreateProcess
@@ -103,7 +120,12 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         val workingDir = project.basePath?.let { java.io.File(it) }
         val process = try {
             ProcessBuilder(command)
-                .apply { if (workingDir != null) directory(workingDir) }
+                .apply {
+                    if (workingDir != null) directory(workingDir)
+                    // The IDE's own environment is not a terminal's, and a tool
+                    // installed for this user only may not be on either.
+                    environment().putAll(com.claudecode.chatplugin.cli.CliEnvironment.forProject(project))
+                }
                 .redirectErrorStream(false)
                 .start()
         } catch (e: java.io.IOException) {
@@ -120,11 +142,12 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         // The prompt goes in here rather than on the command line, which has a
         // length limit the command line does not — see ClaudeCommandBuilder.
         //
-        // Standard input is then closed at once, which is also what keeps a turn
-        // needing confirmation from hanging: the CLI would ask, wait on input
-        // this UI has no way to send, and never reach its result event. At EOF
-        // it cannot wait, and reports the blocked tools in `permission_denials`
-        // instead, which the panel shows.
+        // Standard input is then closed at once. Nothing else is ever sent on
+        // it, and leaving it open only invites the CLI to wait on input this
+        // side has no way to produce. Permission questions do not come this way
+        // — they arrive at the approval endpoint, over HTTP, and are answered
+        // there; with no endpoint the CLI refuses and lists what it refused in
+        // `permission_denials`, which the panel shows afterwards.
         runCatching {
             process.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(prompt) }
         }.onFailure {
@@ -205,7 +228,8 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
         val result = CliRunner.run(
             command = listOf(command, "mcp", "list"),
             workingDir = project.basePath?.let { java.io.File(it) },
-            timeoutSeconds = MCP_LIST_TIMEOUT_SECONDS
+            timeoutSeconds = MCP_LIST_TIMEOUT_SECONDS,
+            environment = com.claudecode.chatplugin.cli.CliEnvironment.forProject(project)
         )
         return when {
             result.failure != null -> "Could not run '$command mcp list': ${result.failure.message}"

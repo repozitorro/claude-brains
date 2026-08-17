@@ -118,6 +118,34 @@ class StreamParserTest {
     }
 
     @Test
+    fun `long output is kept, up to the point where it says it stopped`() {
+        // The block it lands in scrolls, so the cap is about memory rather than
+        // about how much anyone can stand to look at — and where it does bite,
+        // it has to say so rather than just ending.
+        val recorder = Recorder()
+        val output = "x".repeat(StreamParser.MAX_TOOL_OUTPUT + 500)
+        StreamParser().parse(toolResultLine(output), recorder)
+
+        val kept = checkNotNull(recorder.toolResults.single().third)
+        assertTrue(kept.startsWith("x".repeat(1000)))
+        assertTrue(kept.endsWith("… (truncated)"))
+        assertEquals(StreamParser.MAX_TOOL_OUTPUT, kept.substringBefore("\n… (truncated)").length)
+    }
+
+    @Test
+    fun `output that fits is passed through whole`() {
+        val recorder = Recorder()
+        StreamParser().parse(toolResultLine("all of it"), recorder)
+        assertEquals("all of it", recorder.toolResults.single().third)
+    }
+
+    private fun toolResultLine(output: String): String {
+        val escaped = output.replace("\\", "\\\\").replace("\"", "\\\"")
+        return """{"type":"user","message":{"role":"user","content":[
+            {"type":"tool_result","tool_use_id":"toolu_x","is_error":false,"content":"$escaped"}]}}"""
+    }
+
+    @Test
     fun `only MCP servers that failed are reported`() {
         assertEquals(listOf("sentry (failed)"), recorder.mcpFailures)
     }

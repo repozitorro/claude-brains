@@ -31,6 +31,25 @@ class ClaudeSession(var displayName: String) {
      */
     val grantedTools: MutableSet<String> = java.util.concurrent.CopyOnWriteArraySet()
 
+    /**
+     * Programs answered with "always" on a live permission card, by
+     * [com.claudecode.chatplugin.permissions.AutoApproval] key.
+     *
+     * Same reasoning as [grantedTools], and deliberately separate: these were
+     * granted to a question the CLI asked, not to one it refused.
+     */
+    val autoApproved: MutableSet<String> = java.util.concurrent.CopyOnWriteArraySet()
+
+    /**
+     * Where this chat's CLI should send permission questions.
+     *
+     * Set by the panel that can show them and answer them; null when there is
+     * no such panel, or no endpoint could be opened, in which case the CLI goes
+     * back to deciding alone. Not persisted: the port changes every run.
+     */
+    @Volatile
+    var approvalEndpoint: String? = null
+
     @Volatile
     var isBusy: Boolean = false
 

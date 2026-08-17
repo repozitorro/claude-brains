@@ -8,6 +8,9 @@ import com.claudecode.chatplugin.model.FileEdit
 import com.claudecode.chatplugin.model.ModelChoice
 import com.claudecode.chatplugin.model.PermissionChoice
 import com.claudecode.chatplugin.model.PermissionRequest
+import com.claudecode.chatplugin.permissions.ApprovalDecision
+import com.claudecode.chatplugin.permissions.ApprovalService
+import com.claudecode.chatplugin.permissions.AutoApproval
 import com.claudecode.chatplugin.review.ConversationRestore
 import com.claudecode.chatplugin.review.ProjectProblems
 import com.claudecode.chatplugin.model.Role
@@ -91,6 +94,20 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }
         } else {
             SwingChatView(::handleEditLink)
+        }
+
+    /**
+     * Where this chat's CLI sends its permission questions.
+     *
+     * Opened here because this is the object that can answer them, and closed
+     * with the tab: a chat that is gone cannot decide anything, and its
+     * endpoint should not outlive it.
+     */
+    private val approvalEndpoint: String? =
+        if (settings.askBeforeActing) {
+            ApprovalService.getInstance(project).endpointFor(session, this, ::showApproval)
+        } else {
+            null
         }
 
     private val fileSearch = ProjectFileSearch(project, this)
@@ -252,6 +269,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
     init {
         preferredSize = Dimension(420, 600)
+        // The service builds the command line and the panel owns the endpoint,
+        // so the session is where the two meet.
+        session.approvalEndpoint = approvalEndpoint
 
         // Top bar: what this chat runs as (model, permission mode) on the left,
         // what you can do with the transcript on the right — with the account's
@@ -855,10 +875,12 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     /**
      * Turns a refusal into a question with two answers.
      *
-     * The CLI decided alone — it has no way to ask a host, so it refuses and
-     * says what it refused. Asking afterwards is the only place the question can
-     * be put, and answering yes means granting the tool and sending the same
-     * message again, which from the outside is the conversation carrying on.
+     * Reached only when the CLI decided alone — no approval endpoint for this
+     * chat, so it refused and said what it refused. Asking afterwards is then
+     * the only place the question can be put, and answering yes means granting
+     * the tool and sending the same message again, which from the outside is
+     * the conversation carrying on. When an endpoint *is* open the question
+     * arrives before anything happens instead; see [showApproval].
      */
     private fun askToAllow(
         denials: List<com.claudecode.chatplugin.cli.PermissionDenial>,
@@ -1000,6 +1022,59 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // No terminal to hand it to, so hand it over the only other way.
         CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(command))
         addSystemBubble("Couldn't open a terminal, so the command is on your clipboard:\n\n```\n$command\n```")
+    }
+
+    /**
+     * Shows one tool call the CLI is holding open, waiting on an answer.
+     *
+     * Called from the endpoint's own thread, which is parked on the answer, so
+     * everything here goes to the EDT and nothing here blocks.
+     */
+    private fun showApproval(request: com.claudecode.chatplugin.permissions.ApprovalRequest) {
+        ApplicationManager.getApplication().invokeLater {
+            // The turn may have ended between the question being asked and this
+            // arriving, in which case the answer would go nowhere.
+            if (request.isDecided) return@invokeLater
+            val message = ChatMessage(Role.SYSTEM, "")
+            message.approvalRequest = request
+            addAndRender(message)
+            statusLabel.text = "waiting on you"
+        }
+    }
+
+    /** Answers the card, which releases the CLI thread parked on it. */
+    private fun answerApproval(message: ChatMessage, index: Int, action: String) {
+        val request = message.approvalRequest ?: return
+        if (request.isDecided) return // already answered; the card is a record now
+
+        val decision = when (action) {
+            "askrun" -> ApprovalDecision.Allow(request.input)
+            "askalways" -> {
+                AutoApproval.key(request.toolName, request.input)?.let { session.autoApproved.add(it) }
+                ApprovalDecision.Allow(request.input)
+            }
+            // What the model is told. It says what happened and nothing more:
+            // the user is right there and can say what to do instead themselves.
+            else -> ApprovalDecision.Deny("The user declined this in the IDE.")
+        }
+        request.decide(decision)
+        // The card cannot be saved — it holds a live process — so the message
+        // carries a written record of what was decided. Only that survives a
+        // restart, and an empty bubble in the reloaded transcript would be all
+        // there was to show for it.
+        message.text = record(request, decision)
+        renderNow(index, message)
+        statusLabel.text = if (decision is ApprovalDecision.Allow) "allowed" else "skipped"
+    }
+
+    /** One line saying what was asked and what was answered. */
+    private fun record(
+        request: com.claudecode.chatplugin.permissions.ApprovalRequest,
+        decision: ApprovalDecision
+    ): String {
+        val what = request.summary.detail ?: request.summary.title
+        val verb = if (decision is ApprovalDecision.Allow) "Ran" else "Skipped"
+        return "$verb `${what.lineSequence().first().take(160)}`"
     }
 
     /** Applies the user's answer, and asks again when it was yes. */
@@ -1364,6 +1439,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         /** Tools whose refused input is a shell command, so it can be run as one. */
         val COMMAND_TOOLS = setOf("Bash", "PowerShell")
 
+        /** The three answers to a live approval card. */
+        val APPROVAL_ACTIONS = setOf("askrun", "askalways", "askskip")
+
         /** Marks a symbol entry in the `@` popup, where everything else is a path. */
         const val SYMBOL_PREFIX = "◆ "
         const val RENDER_INTERVAL_MS = 50
@@ -1393,6 +1471,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             }
             if (parts[2] == "opensettings") {
                 cliService.openSettings()
+                return@invokeLater
+            }
+            if (parts[2] in APPROVAL_ACTIONS) {
+                answerApproval(message, msgIndex, parts[2])
                 return@invokeLater
             }
             if (parts[2] == "fixproblems") {

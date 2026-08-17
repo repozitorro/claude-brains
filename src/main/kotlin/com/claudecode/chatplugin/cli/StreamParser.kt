@@ -273,7 +273,16 @@ class StreamParser(
 
     companion object {
         /** Tool output beyond this is clamped before it reaches the chat. */
-        internal const val MAX_TOOL_OUTPUT = 2000
+        /**
+         * How much of a tool's output is kept.
+         *
+         * 2000 was a cautious first number and it cut most real output off
+         * mid-sentence: a test run, a build log, a query that answers with a
+         * list. The block it lands in scrolls, so length costs a scrollbar
+         * rather than a wall of text, and this is per tool call in memory only
+         * — none of it is persisted.
+         */
+        internal const val MAX_TOOL_OUTPUT = 20_000
 
         /** A blocked command is quoted back in one line, not in full. */
         internal const val MAX_DENIAL_DETAIL = 80

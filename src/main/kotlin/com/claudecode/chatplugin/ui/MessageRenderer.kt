@@ -77,7 +77,11 @@ object MessageRenderer {
             } else {
                 // Failures open by default — that output is the reason you're looking.
                 val open = if (tc.status == ToolCall.Status.ERROR) " open" else ""
-                "<details$open><summary>$label</summary>" +
+                // A row that opens has to look like one. The platform marker is
+                // hidden (it sits in the wrong place and cannot be styled), so
+                // this stands in for it — and appears only where there is
+                // something to open, which is what makes it mean anything.
+                "<details$open><summary>$label<span class='cb-chev'>›</span></summary>" +
                     "<pre class='cb-out'>" + escapeKeepNewlines(output) + "</pre></details>"
             }
             "<li class='cb-act' data-status='$status'>$inner</li>"
@@ -177,9 +181,56 @@ object MessageRenderer {
             "</div>"
     }
 
-    private fun link(msgIndex: Int, action: String, editIndex: Int, text: String, danger: Boolean = false): String {
+    /**
+     * The question asked *before* anything happens: a card holding one tool
+     * call, with the two answers to it.
+     *
+     * The shape is deliberate. What kind of thing this is and where it happens
+     * goes on top, because that decides most answers on its own; the call
+     * itself sits below in monospace, for the answers that need reading; the
+     * buttons are last and on the right, where a decision belongs.
+     */
+    private fun approvalBlock(request: com.claudecode.chatplugin.permissions.ApprovalRequest, msgIndex: Int): String {
+        val head = "<div class='cb-ask-head'>${escape(request.summary.title)}</div>"
+        val body = request.summary.detail
+            ?.let { "<div class='cb-ask-body'>${escape(it)}</div>" }
+            .orEmpty()
+
+        val decided = request.decision
+        if (decided != null) {
+            val said = when (decided) {
+                is com.claudecode.chatplugin.permissions.ApprovalDecision.Allow ->
+                    if (decided.remembered) "Ran — allowed earlier in this chat" else "Ran"
+                is com.claudecode.chatplugin.permissions.ApprovalDecision.Deny -> escape(decided.message)
+            }
+            val state = if (decided is com.claudecode.chatplugin.permissions.ApprovalDecision.Allow) "ran" else "skipped"
+            return "<div class='cb-ask' data-state='$state'>$head$body" +
+                "<div class='cb-ask-actions'><span class='cb-ask-done'>$said</span></div></div>"
+        }
+
+        val always = com.claudecode.chatplugin.permissions.AutoApproval
+            .label(request.toolName, request.input)
+            ?.let { link(msgIndex, "askalways", 0, "Always allow ${escape(it)}") }
+            .orEmpty()
+
+        return "<div class='cb-ask' data-state='pending'>$head$body" +
+            "<div class='cb-ask-actions'>" +
+            always +
+            link(msgIndex, "askskip", 0, "Skip") +
+            link(msgIndex, "askrun", 0, "Run", primary = true) +
+            "</div></div>"
+    }
+
+    private fun link(
+        msgIndex: Int,
+        action: String,
+        editIndex: Int,
+        text: String,
+        danger: Boolean = false,
+        primary: Boolean = false
+    ): String {
         val token = "claudebrains:$msgIndex:$action:$editIndex"
-        val cls = if (danger) "cb-btn danger" else "cb-btn"
+        val cls = "cb-btn" + (if (danger) " danger" else "") + (if (primary) " primary" else "")
         return "<a class='$cls' href='$token' data-cb='$token'>$text</a>"
     }
 
@@ -200,10 +251,13 @@ object MessageRenderer {
             body.append(escape(message.text))
             body.append("<span class='cb-caret'>&#9611;</span>")
         } else {
-            body.append(md(message.text.ifEmpty { " " }))
+            // A live card already says everything the text says — the text is
+            // there for the reloaded transcript, where the card is gone.
+            if (message.approvalRequest == null) body.append(md(message.text.ifEmpty { " " }))
             // Below the explanation, where the decision belongs: you read what
             // was refused and why, then answer.
             message.permissionRequest?.let { body.append(permissionBlock(it, msgIndex)) }
+            message.approvalRequest?.let { body.append(approvalBlock(it, msgIndex)) }
             message.problems?.takeIf { it.isNotEmpty() }?.let {
                 body.append("<div class='cb-perm'>")
                     .append(link(msgIndex, "fixproblems", 0, "Ask Claude to fix these"))

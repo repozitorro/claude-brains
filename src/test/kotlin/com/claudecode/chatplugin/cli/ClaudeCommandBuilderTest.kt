@@ -78,6 +78,26 @@ class ClaudeCommandBuilderTest {
     }
 
     @Test
+    fun `an approval endpoint is named as an MCP server and as the prompt tool`() {
+        // Both halves or neither: --permission-prompt-tool is refused unless it
+        // names a tool the CLI can actually see, which means the server has to
+        // be configured in the same breath.
+        val command = build(minimal.copy(approvalConfigPath = "C:\\tmp\\approvals.json"))
+        assertEquals("C:\\tmp\\approvals.json", command.valueOf("--mcp-config"))
+        assertEquals(
+            com.claudecode.chatplugin.permissions.McpApprovalProtocol.QUALIFIED_TOOL_NAME,
+            command.valueOf("--permission-prompt-tool")
+        )
+    }
+
+    @Test
+    fun `no endpoint means the CLI goes back to deciding alone`() {
+        val command = build(minimal.copy(approvalConfigPath = null))
+        assertFalse(command.contains("--permission-prompt-tool"))
+        assertFalse(command.contains("--mcp-config"))
+    }
+
+    @Test
     fun `the prompt never reaches the command line at all`() {
         // It goes to the process on stdin. As an argument it was bounded by the
         // command line's own limit — about 32k for everything together on
