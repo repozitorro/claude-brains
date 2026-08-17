@@ -3,16 +3,19 @@ package com.claudecode.chatplugin.model
 import com.claudecode.chatplugin.cli.PermissionDenial
 
 /**
- * A refusal turned back into a question the user can answer.
+ * A refusal turned back into a question the user can answer, after the fact.
  *
- * The CLI cannot ask: in print mode there is no terminal to answer in, and it
- * offers nothing for a host to answer on its behalf — no prompt tool, and no
- * request on the stream (checked against 2.1.223, not assumed). It decides
- * alone and reports what it refused.
+ * This is the fallback now, not the main road. The CLI *can* ask — see
+ * [com.claudecode.chatplugin.permissions.ApprovalService], which is the thing
+ * it asks — but only when an endpoint was opened for the chat: the setting can
+ * turn it off, the endpoint can fail to start, and `--permission-prompt-tool`
+ * is undocumented enough that it may one day stop working. In any of those
+ * cases the CLI goes back to deciding alone and reporting what it refused, and
+ * this is how that refusal is put to the user.
  *
- * So the question is put afterwards instead. The turn has ended, the refusal is
- * known, and answering "yes" means granting the tool and asking again — which
- * from where the user sits is the same conversation carrying on.
+ * The turn has ended by then, so answering "yes" means granting the tool and
+ * asking again — which from where the user sits is the same conversation
+ * carrying on.
  */
 data class PermissionRequest(
     /** What the CLI refused. */

@@ -32,6 +32,7 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
     }
     private val allowedField = JBTextField()
     private val disallowedField = JBTextField()
+    private val askBeforeActingBox = javax.swing.JCheckBox("Ask before running something that needs permission")
     // Multi-line: one entry per line is easier to read than a separator-joined
     // string, and Windows paths contain the separator a single line would use.
     private val extraPathField = JBTextArea(3, 40)
@@ -64,6 +65,13 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             .addLabeledComponent("Claude CLI command or path:", commandField, 1, false)
             .addLabeledComponent("Default model:", modelCombo, 1, false)
             .addLabeledComponent("Permission mode:", permissionCombo, 1, false)
+            .addComponent(askBeforeActingBox)
+            .addComponent(JLabel(
+                "<html><small>The CLI pauses and the chat shows a card with <b>Run</b> and <b>Skip</b>, " +
+                    "instead of refusing and telling you about it afterwards. Turn this off to go back " +
+                    "to that older behaviour. Takes effect in chats opened after the change.</small></html>"
+            ))
+            .addSeparator()
             .addLabeledComponent("Allowed tools (space/comma):", allowedField, 1, false)
             .addLabeledComponent("Disallowed tools (space/comma):", disallowedField, 1, false)
             .addLabeledComponent("Extra PATH entries:", JBScrollPane(extraPathField), 1, false)
@@ -114,7 +122,8 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             allowedField.text != settings.allowedTools ||
             disallowedField.text != settings.disallowedTools ||
             extraPathField.text != settings.extraPath ||
-            extraEnvField.text != settings.extraEnv
+            extraEnvField.text != settings.extraEnv ||
+            askBeforeActingBox.isSelected != settings.askBeforeActing
 
     override fun apply() {
         settings.claudeCommand = commandField.text.trim().ifBlank { "claude" }
@@ -124,6 +133,7 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
         settings.disallowedTools = disallowedField.text.trim()
         settings.extraPath = extraPathField.text.trim()
         settings.extraEnv = extraEnvField.text.trim()
+        settings.askBeforeActing = askBeforeActingBox.isSelected
     }
 
     override fun reset() {
@@ -134,5 +144,6 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
         disallowedField.text = settings.disallowedTools
         extraPathField.text = settings.extraPath
         extraEnvField.text = settings.extraEnv
+        askBeforeActingBox.isSelected = settings.askBeforeActing
     }
 }

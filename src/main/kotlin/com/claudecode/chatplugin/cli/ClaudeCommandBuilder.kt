@@ -26,7 +26,18 @@ data class TurnRequest(
     /** Model id or family alias passed verbatim; null leaves the CLI on its default. */
     val model: String? = null,
     /** The CLI session to resume; null starts a fresh context. */
-    val resumeId: String? = null
+    val resumeId: String? = null,
+    /**
+     * Path to the MCP config naming the endpoint that answers permission
+     * questions for this chat.
+     *
+     * A file rather than the JSON itself, which `--mcp-config` also accepts:
+     * passed inline on Windows it arrives at the CLI with its quotes eaten and
+     * its slashes reversed, and the CLI reads the wreckage as a filename.
+     * Null means don't ask — the mode makes the question moot, or no endpoint
+     * could be opened — and the CLI goes back to deciding alone.
+     */
+    val approvalConfigPath: String? = null
 )
 
 /**
@@ -71,6 +82,16 @@ object ClaudeCommandBuilder {
             add("--disallowedTools")
             add(it)
         }
+        // Turns "refused, here's what I refused" into "may I?". The flag is
+        // absent from `--help` but present and honoured (2.1.232): the CLI
+        // calls this MCP tool for anything it would otherwise have to ask
+        // about, and waits for the answer.
+        request.approvalConfigPath?.let {
+            add("--mcp-config")
+            add(it)
+            add("--permission-prompt-tool")
+            add(com.claudecode.chatplugin.permissions.McpApprovalProtocol.QUALIFIED_TOOL_NAME)
+        }
         request.resumeId?.let {
             add("--resume")
             add(it)
@@ -86,5 +107,9 @@ object ClaudeCommandBuilder {
      * which leaves the CLI on its own configured default.
      */
     fun permissionMode(request: TurnRequest): String? =
-        (request.sessionPermissionMode ?: request.projectPermissionMode).takeIf { it.isNotBlank() }
+        permissionMode(request.sessionPermissionMode, request.projectPermissionMode)
+
+    /** The same rule, for callers deciding something before they have a request. */
+    fun permissionMode(sessionMode: String?, projectMode: String): String? =
+        (sessionMode ?: projectMode).takeIf { it.isNotBlank() }
 }

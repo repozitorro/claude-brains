@@ -39,7 +39,19 @@ class ClaudeCodeSettings : PersistentStateComponent<ClaudeCodeSettings.State> {
         var extraPath: String = "",
 
         /** `KEY=VALUE` per line, for the CLI's environment. */
-        var extraEnv: String = ""
+        var extraEnv: String = "",
+
+        /**
+         * Whether the CLI stops and asks before doing something it would
+         * otherwise have to refuse.
+         *
+         * On by default, because a question you can answer beats a refusal you
+         * have to work around. It rests on `--permission-prompt-tool`, which is
+         * absent from `--help` and could go the same way, so it can be switched
+         * off — and then the plugin behaves exactly as it did before: the CLI
+         * decides alone and reports what it refused.
+         */
+        var askBeforeActing: Boolean = true
     )
 
     private var state = State()
@@ -76,6 +88,10 @@ class ClaudeCodeSettings : PersistentStateComponent<ClaudeCodeSettings.State> {
     var extraEnv: String
         get() = state.extraEnv
         set(value) { state.extraEnv = value }
+
+    var askBeforeActing: Boolean
+        get() = state.askBeforeActing
+        set(value) { state.askBeforeActing = value }
 
     companion object {
         fun getInstance(project: Project): ClaudeCodeSettings =
