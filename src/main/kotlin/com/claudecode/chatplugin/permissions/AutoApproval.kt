@@ -1,7 +1,6 @@
 package com.claudecode.chatplugin.permissions
 
 import com.google.gson.JsonObject
-import java.io.File
 
 /**
  * "Yes, and stop asking me about this."
@@ -52,7 +51,7 @@ object AutoApproval {
         if (command.any { it in FORBIDDEN }) return null
         val first = command.trim().substringBefore(' ').trim('"', '\'')
         if (first.isEmpty()) return null
-        return File(first).name.takeIf { it.isNotEmpty() }
+        return lastPathSegment(first).takeIf { it.isNotEmpty() }
     }
 
     private const val FORBIDDEN = "|&;<>(){}$`"

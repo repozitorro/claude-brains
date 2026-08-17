@@ -67,6 +67,25 @@ class ApprovalSummaryTest {
     }
 
     @Test
+    fun `a path keeps its meaning on a machine that did not write it`() {
+        // The paths here come from the CLI, not from the local filesystem, so
+        // both separators have to work everywhere. `java.io.File` knows only
+        // the separator of the machine it runs on, which passed on Windows and
+        // failed the release build on Linux.
+        assertEquals("node.exe", lastPathSegment("C:\\tools\\node.exe"))
+        assertEquals("node", lastPathSegment("/usr/local/bin/node"))
+        assertEquals("lms-human-front", lastPathSegment("D:\\Work\\lms-human-front\\"))
+        assertEquals("npm", lastPathSegment("npm"))
+    }
+
+    @Test
+    fun `a linux project is named the same way as a windows one`() {
+        val summary = ApprovalSummary.of("Write", input("""{"file_path":"/home/me/notes.txt"}"""), "/srv/lms")
+        assertEquals("Write notes.txt", summary.title)
+        assertEquals("Command npm in …/lms", ApprovalSummary.of("Bash", input("""{"command":"npm test"}"""), "/srv/lms").title)
+    }
+
+    @Test
     fun `a command with no arguments still has a title`() {
         val summary = ApprovalSummary.of("Bash", JsonObject(), null)
         assertEquals("Command", summary.title)

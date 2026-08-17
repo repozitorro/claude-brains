@@ -1,7 +1,19 @@
 package com.claudecode.chatplugin.permissions
 
 import com.google.gson.JsonObject
-import java.io.File
+
+/**
+ * The last segment of a path, whichever separator wrote it.
+ *
+ * Deliberately not `java.io.File`, which knows only the separator of the
+ * machine it is running on: `File("C:\\tools\\node.exe").name` is `node.exe` on
+ * Windows and the whole string on Linux. These paths come from the CLI
+ * describing a command, not from the local filesystem, so they have to keep
+ * their meaning wherever the code happens to run — including a CI runner that
+ * is not the platform the path was written on.
+ */
+internal fun lastPathSegment(path: String): String =
+    path.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')
 
 /**
  * What a tool call looks like when it is put to a person as a question.
@@ -41,7 +53,7 @@ data class ApprovalSummary(val title: String, val detail: String?) {
                 FILE_TOOLS.containsKey(toolName) -> {
                     val path = input.string("file_path") ?: input.string("path") ?: input.string("notebook_path")
                     ApprovalSummary(
-                        title = "${FILE_TOOLS[toolName]} ${path?.let { File(it).name } ?: "file"}",
+                        title = "${FILE_TOOLS[toolName]} ${path?.let { lastPathSegment(it) } ?: "file"}",
                         detail = path
                     )
                 }
@@ -74,12 +86,12 @@ data class ApprovalSummary(val title: String, val detail: String?) {
             val first = command?.trim()?.substringBefore(' ')?.takeIf { it.isNotEmpty() } ?: return null
             // A full path names the same program as its last segment does, and
             // the segment is what someone recognises.
-            return File(first.trim('"', '\'')).name
+            return lastPathSegment(first.trim('"', '\''))
         }
 
         /** Written as the shell prompt would write it: the last segment, elided. */
         private fun location(projectDir: String?): String? =
-            projectDir?.let { "in …/${File(it).name}" }
+            projectDir?.let { "in …/${lastPathSegment(it)}" }
 
         private fun host(url: String): String =
             runCatching { java.net.URI(url).host }.getOrNull() ?: url
