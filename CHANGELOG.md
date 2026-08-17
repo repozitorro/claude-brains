@@ -6,13 +6,14 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
-## 0.10.0
+## 0.10.1
 
 - **Claude now asks before it acts, instead of refusing and explaining afterwards.** A card appears in the conversation with the command it wants to run and where it would run it, and **Run** or **Skip**. The turn is genuinely paused until you answer — nothing has happened yet.
 - **Always allow a program**, e.g. `npm`, for the rest of the chat. Offered only when the line is one program's arguments and nothing else: a `;` or `&&` anywhere and the offer is withdrawn, because the button could no longer say what it grants.
 - This can be switched off in Settings, which puts the old after-the-fact **Allow / No** message back. It rests on a CLI flag that is absent from `claude --help`, so the older path stays in place for the day it stops working.
 - **Tools installed for your user only now work.** `~/.local/bin`, npm's prefix, cargo, bun and pip's `--user` scripts are added to the CLI's PATH when they exist — that is where a "command not found" for something plainly installed usually comes from. Settings takes extra directories and `KEY=VALUE` lines for anything installed somewhere unguessable.
 - **Command output opens and scrolls.** A chevron now marks the rows that have output — they were always openable, but nothing said so — and ten times more of that output is kept, so a test run or a query result no longer stops mid-sentence.
+- (0.10.0 was tagged but never built: its tests read a Windows path on a Linux runner and failed. Nothing was published under it.)
 
 ## 0.9.0
 
