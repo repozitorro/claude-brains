@@ -77,7 +77,11 @@ object MessageRenderer {
             } else {
                 // Failures open by default — that output is the reason you're looking.
                 val open = if (tc.status == ToolCall.Status.ERROR) " open" else ""
-                "<details$open><summary>$label</summary>" +
+                // A row that opens has to look like one. The platform marker is
+                // hidden (it sits in the wrong place and cannot be styled), so
+                // this stands in for it — and appears only where there is
+                // something to open, which is what makes it mean anything.
+                "<details$open><summary>$label<span class='cb-chev'>›</span></summary>" +
                     "<pre class='cb-out'>" + escapeKeepNewlines(output) + "</pre></details>"
             }
             "<li class='cb-act' data-status='$status'>$inner</li>"
