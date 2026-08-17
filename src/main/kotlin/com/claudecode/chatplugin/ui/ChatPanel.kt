@@ -1058,8 +1058,23 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             else -> ApprovalDecision.Deny("The user declined this in the IDE.")
         }
         request.decide(decision)
+        // The card cannot be saved — it holds a live process — so the message
+        // carries a written record of what was decided. Only that survives a
+        // restart, and an empty bubble in the reloaded transcript would be all
+        // there was to show for it.
+        message.text = record(request, decision)
         renderNow(index, message)
         statusLabel.text = if (decision is ApprovalDecision.Allow) "allowed" else "skipped"
+    }
+
+    /** One line saying what was asked and what was answered. */
+    private fun record(
+        request: com.claudecode.chatplugin.permissions.ApprovalRequest,
+        decision: ApprovalDecision
+    ): String {
+        val what = request.summary.detail ?: request.summary.title
+        val verb = if (decision is ApprovalDecision.Allow) "Ran" else "Skipped"
+        return "$verb `${what.lineSequence().first().take(160)}`"
     }
 
     /** Applies the user's answer, and asks again when it was yes. */

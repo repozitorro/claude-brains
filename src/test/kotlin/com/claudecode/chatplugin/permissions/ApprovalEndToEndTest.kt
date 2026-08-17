@@ -75,7 +75,15 @@ class ApprovalEndToEndTest {
             writeText(McpApprovalProtocol.mcpConfigJson(endpoint), Charsets.UTF_8)
         }
         val command = ClaudeCommandBuilder.build(
-            TurnRequest(claudeCommand = "claude", approvalConfigPath = config.absolutePath)
+            TurnRequest(
+                claudeCommand = "claude",
+                // The mode every chat runs in unless told otherwise. Worth
+                // pinning: the prompt tool and the mode are two halves of the
+                // same permission engine, and "it worked with no mode set" is
+                // not evidence about the one the plugin actually passes.
+                projectPermissionMode = "acceptEdits",
+                approvalConfigPath = config.absolutePath
+            )
         ).toMutableList()
         command[0] = com.claudecode.chatplugin.cli.ExecutableResolver.resolve(command[0])
 

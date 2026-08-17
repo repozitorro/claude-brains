@@ -247,7 +247,9 @@ object MessageRenderer {
             body.append(escape(message.text))
             body.append("<span class='cb-caret'>&#9611;</span>")
         } else {
-            body.append(md(message.text.ifEmpty { " " }))
+            // A live card already says everything the text says — the text is
+            // there for the reloaded transcript, where the card is gone.
+            if (message.approvalRequest == null) body.append(md(message.text.ifEmpty { " " }))
             // Below the explanation, where the decision belongs: you read what
             // was refused and why, then answer.
             message.permissionRequest?.let { body.append(permissionBlock(it, msgIndex)) }
