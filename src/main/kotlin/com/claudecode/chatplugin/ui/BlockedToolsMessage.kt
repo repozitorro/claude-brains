@@ -46,16 +46,24 @@ object BlockedToolsMessage {
         }
 
     private fun explain(denials: List<PermissionDenial>, mode: String?): String = when {
+        // Auto and Don't ask are the modes that exist so nobody is interrupted,
+        // so this chat deliberately gives them nothing to interrupt with. When
+        // their own classifier refuses something, this is where it surfaces —
+        // and saying "there is no terminal" would blame the wrong thing.
+        mode == "auto" || mode == "dontAsk" ->
+            "**${if (mode == "auto") "Auto" else "Don't ask"}** decides for itself and is never asked " +
+                "here, which is what the mode is for — so anything it refuses arrives at the end of the " +
+                "turn like this. Switch this chat to **Accept edits** to be asked before it happens instead."
+
         mode == "acceptEdits" && denials.any { !it.toolName.isFileEdit() } ->
-            "**Accept edits** allows file edits only — commands and other tools still need permission, " +
-                "and this chat has no terminal to answer a prompt in, so they are refused instead of asked."
+            "**Accept edits** allows file edits only — commands and other tools still need permission."
 
         mode == "plan" ->
             "**Plan** is read-only by design: Claude works out what it would do without doing any of it."
 
         else ->
-            "This chat has no terminal to answer a permission prompt in, so anything needing one is " +
-                "refused rather than asked."
+            "Nothing was asked before this happened, so the CLI decided on its own. If this chat has " +
+                "asking turned off, or its endpoint could not be opened, that is why."
     }
 
     private fun remedy(denials: List<PermissionDenial>, mode: String?): String {

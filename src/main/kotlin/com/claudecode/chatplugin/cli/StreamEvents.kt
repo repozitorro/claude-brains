@@ -46,6 +46,15 @@ data class TurnResult(
  */
 interface StreamListener {
     fun onTextChunk(chunk: String)
+
+    /**
+     * A new block of reply text is starting, after something else came first.
+     *
+     * The reply resumes in a fresh block every time a tool runs, and run
+     * together they read as one broken sentence: "…не вигадувати свій.Тепер
+     * створю…".
+     */
+    fun onTextBlockStart() {}
     fun onThinkingChunk(chunk: String) {}
     /** A tool Claude invoked this turn, already summarised for display (e.g. "Read foo.kt"). */
     fun onToolUse(id: String?, display: String) {}

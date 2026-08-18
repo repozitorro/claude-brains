@@ -51,6 +51,15 @@ class StreamParser(
 
     private val log = Logger.getInstance(StreamParser::class.java)
 
+    /**
+     * Whether a content block has begun and has yet to produce anything.
+     *
+     * Per-turn state, which is why one of these is built for each turn rather
+     * than shared: two chats streaming at once would otherwise take each
+     * other's paragraph breaks.
+     */
+    private var blockStarted = false
+
     /** Processes one JSON line. Returns a [TurnResult] for the terminal `result` event, else null. */
     fun parse(line: String, listener: StreamListener): TurnResult? {
         val json = try {
@@ -66,11 +75,26 @@ class StreamParser(
         when (json.get("type")?.asString) {
             "stream_event" -> {
                 val event = json.getAsJsonObject("event") ?: return null
+                // A reply is written in blocks, and a turn that stops to run a
+                // tool comes back in a new one. Nothing in a delta says which
+                // block it belongs to — the index restarts from 0 with every
+                // assistant message, so "one" and "three" either side of a tool
+                // call both arrive as index 0 (verified against 2.1.232). What
+                // separates them is that a block *started*, so that is what is
+                // tracked, and the first text out of a new block says so.
+                if (event.get("type")?.asString == "content_block_start") blockStarted = true
                 if (event.get("type")?.asString == "content_block_delta") {
                     val delta = event.getAsJsonObject("delta") ?: return null
                     when (delta.get("type")?.asString) {
-                        "text_delta" -> delta.get("text")?.asString?.let { listener.onTextChunk(it) }
-                        "thinking_delta" -> delta.get("thinking")?.asString?.let { listener.onThinkingChunk(it) }
+                        "text_delta" -> delta.get("text")?.asString?.let {
+                            if (blockStarted) listener.onTextBlockStart()
+                            blockStarted = false
+                            listener.onTextChunk(it)
+                        }
+                        "thinking_delta" -> delta.get("thinking")?.asString?.let {
+                            blockStarted = false
+                            listener.onThinkingChunk(it)
+                        }
                     }
                 }
             }
@@ -142,10 +166,7 @@ class StreamParser(
                     inputTokens = usage?.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
                     outputTokens = usage?.get("output_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
                     durationMs = json.get("duration_ms")?.takeIf { it.isJsonPrimitive }?.asLong,
-                    contextTokens = usage?.let {
-                        num(it, "input_tokens") + num(it, "cache_read_input_tokens") +
-                            num(it, "cache_creation_input_tokens")
-                    },
+                    contextTokens = contextTokens(usage),
                     contextWindow = parseContextWindow(json.getAsJsonObject("modelUsage")),
                     permissionDenials = parsePermissionDenials(json.getAsJsonArray("permission_denials")),
                     apiErrorStatus = json.get("api_error_status")?.takeIf { it.isJsonPrimitive }?.asInt,
@@ -216,6 +237,30 @@ class StreamParser(
      * A turn can touch more than one model (a sub-agent on a smaller one, say);
      * the largest window is the one the conversation itself is bounded by.
      */
+    /**
+     * How full the model's context was when the turn finished.
+     *
+     * Not the turn's totals, which is what this used to read and why the panel
+     * once claimed `1.3M / 1.0M (128%)`. A turn that stops to run tools is
+     * several requests, and each one re-reads the cached prefix, so the totals
+     * count the same tokens over and over: they measure traffic, not occupancy,
+     * and pass the window as soon as the turn is long enough.
+     *
+     * The last iteration is one request, and that is the thing bounded by the
+     * context window. Where the CLI reports no iterations — a turn that never
+     * called a tool — the totals *are* the single request, so they stand.
+     */
+    private fun contextTokens(usage: JsonObject?): Long? {
+        if (usage == null) return null
+        val last = usage.getAsJsonArray("iterations")
+            ?.lastOrNull { it.isJsonObject }
+            ?.asJsonObject
+        val from = last ?: usage
+        return num(from, "input_tokens") +
+            num(from, "cache_read_input_tokens") +
+            num(from, "cache_creation_input_tokens")
+    }
+
     private fun parseContextWindow(modelUsage: JsonObject?): Long? =
         modelUsage?.entrySet()
             ?.mapNotNull { (_, value) ->

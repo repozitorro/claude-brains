@@ -150,25 +150,28 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         EFFORT_LEVELS.forEach { addItem(it) }
         selectedItem = session.selectedEffort ?: settings.defaultEffort.ifBlank { CLI_DEFAULT }
         toolTipText = "How much thinking this chat spends per turn"
-        // Secondary controls, and the widest agent names ("general-purpose")
-        // would otherwise set the width for the whole row.
-        preferredSize = Dimension(JBUI.scale(118), preferredSize.height)
         addActionListener {
             session.selectedEffort = (selectedItem as? String)?.takeIf { it != CLI_DEFAULT }
         }
     }
 
     /**
-     * Which subagent runs the turn.
+     * Which subagent runs the turn — `Explore`, `Plan`, whatever this machine
+     * has.
      *
-     * Populated from the CLI itself — nothing written here could know which
-     * agents a given machine has — so it holds only the default until a turn
-     * has reported the list.
+     * Hidden until the list is known, and the only place it can be known is the
+     * CLI's own `init` event, which arrives with the first turn. Shown before
+     * then it offered exactly one choice, "Default agent", truncated to
+     * "Defa…gent" — a control that explained nothing and did nothing.
+     *
+     * Asking the CLI up front was the obvious alternative and is the wrong one:
+     * the init event only comes with a turn, and a turn calls the model. A
+     * dropdown is not worth spending someone's quota on.
      */
     private val agentSelector = JComboBox<String>().apply {
         addItem(DEFAULT_AGENT)
-        toolTipText = "Agent for this chat"
-        preferredSize = Dimension(JBUI.scale(118), preferredSize.height)
+        toolTipText = "Which agent runs this chat's turns — known once the CLI has answered once"
+        isVisible = false
         addActionListener {
             session.selectedAgent = (selectedItem as? String)?.takeIf { it != DEFAULT_AGENT }
         }
@@ -177,6 +180,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     /** Fills the agent list in once the CLI has said what it has. */
     private fun refreshAgentChoices() {
         val agents = session.capabilities?.agents.orEmpty()
+        // A restored chat already knows what it chose, and hiding the control
+        // that says so would make the choice look lost.
+        agentSelector.isVisible = agents.isNotEmpty() || session.selectedAgent != null
         if (agents.isEmpty()) return
         val chosen = session.selectedAgent
         if ((0 until agentSelector.itemCount).map { agentSelector.getItemAt(it) } == listOf(DEFAULT_AGENT) + agents) {
@@ -321,6 +327,8 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // The service builds the command line and the panel owns the endpoint,
         // so the session is where the two meet.
         session.approvalEndpoint = approvalEndpoint
+        // A restored chat may already know its agents, or its own choice.
+        refreshAgentChoices()
 
         // Top bar: what this chat runs as (model, permission mode) on the left,
         // what you can do with the transcript on the right — with the account's
@@ -328,9 +336,14 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // account rather than as one more control.
         val controlsRow = JPanel(BorderLayout()).apply {
             isOpaque = false
-            // WrapLayout, not FlowLayout: this sits in WEST, which grants
-            // preferred width and nothing less, so a row that cannot fit has to
-            // report a taller size rather than run on under the buttons in EAST.
+            // WrapLayout, not FlowLayout: a row that cannot fit has to report a
+            // taller size rather than run on under the buttons beside it.
+            //
+            // Which is also why none of these selectors is given a width. Two
+            // were, to keep the row narrow, and both then clipped their own
+            // labels to "Defa…ffort" and "Defa…gent" — a number I guessed twice
+            // and got wrong twice. Sizing to content cannot be wrong, and the
+            // row now has somewhere to go when the sum of them is too much.
             add(JPanel(WrapLayout(java.awt.FlowLayout.LEFT, 4, 2)).apply {
                 isOpaque = false
                 add(modelSelector)
@@ -1402,6 +1415,14 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         fun repaintNow() = renderNow(assistantIndex, assistantMessage)
 
         cliService.sendPrompt(session, prompt, object : com.claudecode.chatplugin.cli.StreamListener {
+            override fun onTextBlockStart() {
+                ApplicationManager.getApplication().invokeLater {
+                    // A paragraph, not a space: these were separate blocks and
+                    // read as separate thoughts.
+                    if (assistantMessage.text.isNotBlank()) assistantMessage.text += "\n\n"
+                }
+            }
+
             override fun onTextChunk(chunk: String) {
                 ApplicationManager.getApplication().invokeLater {
                     assistantMessage.text += chunk
