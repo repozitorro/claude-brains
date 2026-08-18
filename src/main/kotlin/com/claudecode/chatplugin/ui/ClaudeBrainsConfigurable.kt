@@ -149,7 +149,28 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             budgetField.text != settings.maxBudgetUsd ||
             extraDirsField.text != settings.extraDirs
 
+    /**
+     * Caught here rather than by the CLI, which rejects it per turn.
+     *
+     * `--max-budget-usd abc` is refused with "must be a positive number greater
+     * than 0" — and refused every time, so a typo in this box would break every
+     * message until someone thought to look at a setting they last touched days
+     * ago. The dialog is where it can still be a typo.
+     */
+    private fun validateBudget() {
+        val text = budgetField.text.trim()
+        if (text.isEmpty()) return
+        val amount = text.toDoubleOrNull()
+        if (amount == null || amount <= 0) {
+            throw com.intellij.openapi.options.ConfigurationException(
+                "The spending cap must be a positive number of dollars, for example 2.50 — " +
+                    "or empty for no cap."
+            )
+        }
+    }
+
     override fun apply() {
+        validateBudget()
         settings.claudeCommand = commandField.text.trim().ifBlank { "claude" }
         settings.defaultModel = (modelCombo.selectedItem as ModelChoice).id.orEmpty()
         settings.permissionMode = (permissionCombo.selectedItem as PermissionChoice).id.orEmpty()
