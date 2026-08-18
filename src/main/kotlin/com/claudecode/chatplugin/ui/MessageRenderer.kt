@@ -295,6 +295,13 @@ object MessageRenderer {
             // was refused and why, then answer.
             message.permissionRequest?.let { body.append(permissionBlock(it, msgIndex)) }
             message.approvalRequest?.let { body.append(approvalBlock(it, msgIndex)) }
+            // Offered on your own turns, because those are the points a
+            // conversation is worth going back to and taking differently.
+            if (message.role == com.claudecode.chatplugin.model.Role.USER) {
+                body.append("<div class='cb-perm'>")
+                    .append(link(msgIndex, "branchhere", -1, "branch from here"))
+                    .append("</div>")
+            }
             message.problems?.takeIf { it.isNotEmpty() }?.let {
                 body.append("<div class='cb-perm'>")
                     .append(link(msgIndex, "fixproblems", 0, "Ask Claude to fix these"))

@@ -2,6 +2,7 @@ package com.claudecode.chatplugin.ui
 
 import com.claudecode.chatplugin.ClaudeCliService
 import com.claudecode.chatplugin.ClaudeCodeSettings
+import com.claudecode.chatplugin.ClaudeSessionManager
 import com.claudecode.chatplugin.model.ChatMessage
 import com.claudecode.chatplugin.model.ClaudeSession
 import com.claudecode.chatplugin.model.FileEdit
@@ -137,6 +138,50 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         toolTipText = "Model for this chat"
 
         addActionListener { session.selectedModel = (selectedItem as ModelChoice).id }
+    }
+
+    /**
+     * How hard the model works on a turn — the CLI's own `--effort`.
+     *
+     * A direct lever on what a turn costs, which matters more here than
+     * anywhere: the panel already shows how much of the week is gone.
+     */
+    private val effortSelector = JComboBox<String>().apply {
+        EFFORT_LEVELS.forEach { addItem(it) }
+        selectedItem = session.selectedEffort ?: settings.defaultEffort.ifBlank { CLI_DEFAULT }
+        toolTipText = "How much thinking this chat spends per turn"
+        addActionListener {
+            session.selectedEffort = (selectedItem as? String)?.takeIf { it != CLI_DEFAULT }
+        }
+    }
+
+    /**
+     * Which subagent runs the turn.
+     *
+     * Populated from the CLI itself — nothing written here could know which
+     * agents a given machine has — so it holds only the default until a turn
+     * has reported the list.
+     */
+    private val agentSelector = JComboBox<String>().apply {
+        addItem(CLI_DEFAULT)
+        toolTipText = "Agent for this chat"
+        addActionListener {
+            session.selectedAgent = (selectedItem as? String)?.takeIf { it != CLI_DEFAULT }
+        }
+    }
+
+    /** Fills the agent list in once the CLI has said what it has. */
+    private fun refreshAgentChoices() {
+        val agents = session.capabilities?.agents.orEmpty()
+        if (agents.isEmpty()) return
+        val chosen = session.selectedAgent
+        if ((0 until agentSelector.itemCount).map { agentSelector.getItemAt(it) } == listOf(CLI_DEFAULT) + agents) {
+            return // already showing this list; leave the selection alone
+        }
+        agentSelector.removeAllItems()
+        agentSelector.addItem(CLI_DEFAULT)
+        agents.forEach { agentSelector.addItem(it) }
+        agentSelector.selectedItem = chosen ?: CLI_DEFAULT
     }
 
     private val modeSelector = JComboBox<PermissionChoice>().apply {
@@ -283,6 +328,8 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 isOpaque = false
                 add(modelSelector)
                 add(modeSelector)
+                add(effortSelector)
+                add(agentSelector)
             }, BorderLayout.WEST)
             add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0)).apply {
                 isOpaque = false
@@ -625,7 +672,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 if (e.keyCode == KeyEvent.VK_ENTER || e.keyCode == KeyEvent.VK_ESCAPE) return
                 val text = inputArea.text
                 if (text.startsWith("/") && !text.contains("\n")) {
-                    val matches = SlashCommands.matching(text)
+                    val matches = SlashCommands.matching(text, session.capabilities)
                     if (matches.isNotEmpty()) showSlashPopup(matches)
                     return
                 }
@@ -1124,6 +1171,43 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         statusLabel.text = if (decision is ApprovalDecision.Allow) "allowed" else "skipped"
     }
 
+    /**
+     * Opens a new chat carrying on from [index], leaving this one alone.
+     *
+     * The CLI does the real work: `--resume` with `--fork-session` keeps the
+     * history and continues under a new id, so both conversations remember
+     * everything up to the branch and neither can write into the other. The
+     * transcript here is copied so the new tab reads as a continuation rather
+     * than starting blank on top of a context you cannot see.
+     */
+    private fun branchFrom(index: Int) {
+        val manager = project.getService(ClaudeSessionManager::class.java)
+        val branch = manager.createSession("${session.displayName} ↳")
+        branch.cliSessionId = session.cliSessionId
+        branch.forkOnNextTurn = session.cliSessionId != null
+        branch.selectedModel = session.selectedModel
+        branch.selectedAgent = session.selectedAgent
+        branch.selectedEffort = session.selectedEffort
+        branch.permissionMode = session.permissionMode
+        // Text only, and freshly built: `copy()` would hand both chats the same
+        // mutable lists of edits, and reverting a file in one would appear to
+        // have happened in the other. This is the same reduction the transcript
+        // survives a restart as.
+        session.messages.take(index + 1).forEach {
+            branch.messages.add(ChatMessage(it.role, it.text, it.thinking))
+        }
+
+        // Creating it is enough: the tool window follows the session list and
+        // builds the tab itself.
+        statusLabel.text = if (branch.forkOnNextTurn) {
+            "branched — the original is untouched"
+        } else {
+            // Nothing to fork from yet: this chat has never run a turn, so the
+            // new one simply starts where it would have.
+            "branched"
+        }
+    }
+
     /** One line saying what was asked and what was answered. */
     private fun record(
         request: com.claudecode.chatplugin.permissions.ApprovalRequest,
@@ -1346,6 +1430,15 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 }
             }
 
+            override fun onCapabilities(capabilities: com.claudecode.chatplugin.cli.SessionCapabilities) {
+                ApplicationManager.getApplication().invokeLater {
+                    session.capabilities = capabilities
+                    // The agent list is only known once a turn has reported it,
+                    // so the selector fills in rather than starting complete.
+                    refreshAgentChoices()
+                }
+            }
+
             override fun onMcpFailures(failed: List<String>) {
                 ApplicationManager.getApplication().invokeLater {
                     addSystemBubble(
@@ -1506,6 +1599,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         /** The three answers to a live approval card. */
         val APPROVAL_ACTIONS = setOf("askrun", "askalways", "askskip")
 
+        /** What the CLI accepts for --effort, plus the entry that passes none. */
+        const val CLI_DEFAULT = "Default effort"
+        val EFFORT_LEVELS = listOf(CLI_DEFAULT, "low", "medium", "high", "xhigh", "max")
+
         /** Marks a symbol entry in the `@` popup, where everything else is a path. */
         const val SYMBOL_PREFIX = "◆ "
         const val RENDER_INTERVAL_MS = 50
@@ -1541,6 +1638,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 "permdeny" -> answerPermission(message, index, PermissionRequest.Answer.DENIED)
 
                 "restorehere" -> restoreFilesToBefore(index)
+                "branchhere" -> branchFrom(index)
 
                 "revertall" -> {
                     val targets = message.edits.filter { it.isResolved && it.canRevert }

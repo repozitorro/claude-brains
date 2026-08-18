@@ -136,6 +136,43 @@ class ClaudeCommandBuilderTest {
     }
 
     @Test
+    fun `agent and effort are passed when chosen, and omitted when not`() {
+        val chosen = build(minimal.copy(agent = "Explore", effort = "high"))
+        assertEquals("Explore", chosen.valueOf("--agent"))
+        assertEquals("high", chosen.valueOf("--effort"))
+
+        // Blank is not a choice the CLI can act on, and an omitted flag leaves
+        // it on its own default — which is the point of the "Default" entry.
+        val neither = build(minimal.copy(agent = "", effort = null))
+        assertFalse(neither.contains("--agent"))
+        assertFalse(neither.contains("--effort"))
+    }
+
+    @Test
+    fun `a spending cap is passed only when one is set`() {
+        assertEquals("2.50", build(minimal.copy(maxBudgetUsd = "2.50")).valueOf("--max-budget-usd"))
+        assertFalse(build(minimal.copy(maxBudgetUsd = "")).contains("--max-budget-usd"))
+    }
+
+    @Test
+    fun `each extra directory gets its own flag`() {
+        // Joined into one argument, a path containing a space would arrive as
+        // two directories, neither of which exists.
+        val command = build(minimal.copy(extraDirs = listOf("D:\\Work\\other", "C:\\My Things\\lib", "")))
+        val dirs = command.withIndex().filter { it.value == "--add-dir" }.map { command[it.index + 1] }
+        assertEquals(listOf("D:\\Work\\other", "C:\\My Things\\lib"), dirs)
+    }
+
+    @Test
+    fun `forking is only said where it means something`() {
+        // The flag is documented for use with --resume; on a fresh turn there
+        // is nothing to fork from and it would just be noise.
+        assertTrue(build(minimal.copy(resumeId = "abc", forkSession = true)).contains("--fork-session"))
+        assertFalse(build(minimal.copy(resumeId = null, forkSession = true)).contains("--fork-session"))
+        assertFalse(build(minimal.copy(resumeId = "abc", forkSession = false)).contains("--fork-session"))
+    }
+
+    @Test
     fun `the prompt never reaches the command line at all`() {
         // It goes to the process on stdin. As an argument it was bounded by the
         // command line's own limit — about 32k for everything together on

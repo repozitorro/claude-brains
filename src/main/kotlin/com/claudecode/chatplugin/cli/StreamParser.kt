@@ -112,6 +112,10 @@ class StreamParser(
                         if (status.equals("connected", ignoreCase = true)) null else "$name ($status)"
                     }.orEmpty()
                     if (failed.isNotEmpty()) listener.onMcpFailures(failed)
+
+                    // The same event names every command, skill and agent this
+                    // CLI has. Nothing written here could know the user's own.
+                    SessionCapabilities.from(json).takeIf { !it.isEmpty }?.let(listener::onCapabilities)
                 }
             }
             "rate_limit_event" -> {
