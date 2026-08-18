@@ -150,9 +150,6 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         EFFORT_LEVELS.forEach { addItem(it) }
         selectedItem = session.selectedEffort ?: settings.defaultEffort.ifBlank { CLI_DEFAULT }
         toolTipText = "How much thinking this chat spends per turn"
-        // Secondary controls, and the widest agent names ("general-purpose")
-        // would otherwise set the width for the whole row.
-        preferredSize = Dimension(JBUI.scale(150), preferredSize.height)
         addActionListener {
             session.selectedEffort = (selectedItem as? String)?.takeIf { it != CLI_DEFAULT }
         }
@@ -174,7 +171,6 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private val agentSelector = JComboBox<String>().apply {
         addItem(DEFAULT_AGENT)
         toolTipText = "Which agent runs this chat's turns — known once the CLI has answered once"
-        preferredSize = Dimension(JBUI.scale(150), preferredSize.height)
         isVisible = false
         addActionListener {
             session.selectedAgent = (selectedItem as? String)?.takeIf { it != DEFAULT_AGENT }
@@ -340,9 +336,14 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // account rather than as one more control.
         val controlsRow = JPanel(BorderLayout()).apply {
             isOpaque = false
-            // WrapLayout, not FlowLayout: this sits in WEST, which grants
-            // preferred width and nothing less, so a row that cannot fit has to
-            // report a taller size rather than run on under the buttons in EAST.
+            // WrapLayout, not FlowLayout: a row that cannot fit has to report a
+            // taller size rather than run on under the buttons beside it.
+            //
+            // Which is also why none of these selectors is given a width. Two
+            // were, to keep the row narrow, and both then clipped their own
+            // labels to "Defa…ffort" and "Defa…gent" — a number I guessed twice
+            // and got wrong twice. Sizing to content cannot be wrong, and the
+            // row now has somewhere to go when the sum of them is too much.
             add(JPanel(WrapLayout(java.awt.FlowLayout.LEFT, 4, 2)).apply {
                 isOpaque = false
                 add(modelSelector)
