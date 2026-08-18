@@ -6,6 +6,12 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.10.4
+
+- **You are asked once, however many times the CLI asks.** It abandons a permission request after about a minute and repeats it, up to four times, before giving up on the turn — so thinking for two minutes used to hand you a stack of identical cards. Repeats now wait on the answer you are already giving.
+- **A card stops offering Run once nobody is listening.** When the turn ends, the chat closes, or the wait runs out, the card says what happened instead of inviting a click into nothing. Note the real budget is the CLI's: about four minutes.
+- **The plugin no longer litters your `~/.claude`.** Reading the usage percentages runs the CLI, and every run filed a transcript — one a minute, for as long as the panel was open, sitting among your real conversations where `claude --resume` looks. It now names its own session and removes that file afterwards. If you have a backlog, `grep -rl '"content":"/usage' ~/.claude/projects --include=*.jsonl | xargs rm` clears it.
+
 ## 0.10.3
 
 - **Fixes Run and Skip, which broke the whole panel in 0.10.2.** Clicking one followed the link instead of answering: the conversation was replaced by a browser error page while the turn sat waiting for an answer that could no longer be sent. Every action link in the page is now caught by a single handler that exists before the markup does, so no future button can land in the same gap.
