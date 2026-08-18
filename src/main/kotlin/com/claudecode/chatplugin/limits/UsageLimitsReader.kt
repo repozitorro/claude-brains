@@ -3,6 +3,7 @@ package com.claudecode.chatplugin.limits
 import com.claudecode.chatplugin.ClaudeCodeSettings
 import com.claudecode.chatplugin.cli.CliEnvironment
 import com.claudecode.chatplugin.cli.CliRunner
+import com.claudecode.chatplugin.cli.CliTranscript
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.io.File
@@ -15,8 +16,11 @@ import java.io.File
  * instead). Costs nothing: the run makes no model call — verified against CLI
  * 2.1.205, where the session it records contains zero tokens.
  *
- * It does leave a small session transcript behind each time, which is why the
- * caller polls on an interval rather than continuously.
+ * Every run leaves a transcript behind, and this one runs every minute the
+ * panel is open: 4835 of them had accumulated in one user's `~/.claude`,
+ * sitting among their real conversations where `claude --resume` looks. So the
+ * session id is chosen here rather than by the CLI, which makes the file's name
+ * known in advance — and the run clears up after itself. See [CliTranscript].
  */
 object UsageLimitsReader {
 
@@ -24,13 +28,21 @@ object UsageLimitsReader {
 
     fun read(project: Project): List<LimitBar> {
         val command = ClaudeCodeSettings.getInstance(project).claudeCommand
+        val workingDir = project.basePath?.let { File(it) }
+        // Ours, so it can be cleaned up afterwards without guessing which file
+        // belongs to this run.
+        val sessionId = java.util.UUID.randomUUID().toString()
+
         val result = CliRunner.run(
-            command = listOf(command),
-            workingDir = project.basePath?.let { File(it) },
+            command = listOf(command, "--session-id", sessionId),
+            workingDir = workingDir,
             timeoutSeconds = TIMEOUT_SECONDS,
             stdin = "/usage\n",
             environment = CliEnvironment.forProject(project)
         )
+        // Whatever the run did, the record of it is not a conversation anyone
+        // asked for.
+        CliTranscript.discard(CliTranscript.fileFor(sessionId, workingDir))
         if (result.failure != null) {
             log.warn("Could not read the usage report: ${result.failure.message}")
             return emptyList()
