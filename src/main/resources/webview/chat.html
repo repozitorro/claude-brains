@@ -334,15 +334,22 @@ __HLJS_JS__
       wrap.appendChild(pre);
     });
 
-    body.querySelectorAll('a[data-cb]').forEach(function (a) {
-      if (a.__cbWired) return;
-      a.__cbWired = true;
-      a.addEventListener('click', function (e) {
-        e.preventDefault();
-        window.cbLink(a.getAttribute('data-cb'));
-      });
-    });
   }
+
+  /* One listener for every action link there will ever be.
+   *
+   * Wiring them one by one only worked for content that had finished
+   * streaming, because that is when the pass above runs. A permission card
+   * appears *during* a turn, on the message being written — so its buttons were
+   * never wired, the anchor navigated, and `claudebrains:5:askrun:4` replaced
+   * the whole conversation with a browser error page. Delegation cannot have
+   * that bug: the handler exists before the markup does. */
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[data-cb]') : null;
+    if (!a) return;
+    e.preventDefault();
+    window.cbLink(a.getAttribute('data-cb'));
+  });
 
   window.cbClear = function () {
     chat.innerHTML = '';

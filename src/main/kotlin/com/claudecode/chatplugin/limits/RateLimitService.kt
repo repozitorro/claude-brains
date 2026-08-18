@@ -55,13 +55,62 @@ class RateLimitService(private val project: Project) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val fresh = UsageLimitsReader.read(project)
             if (fresh.isNotEmpty() && fresh != bars) {
+                val previous = bars
                 bars = fresh
+                val resets = LimitReset.detect(previous, fresh)
                 ApplicationManager.getApplication().invokeLater {
-                    if (!project.isDisposed) fireChanged()
+                    if (project.isDisposed) return@invokeLater
+                    fireChanged()
+                    resets.forEach(::announce)
                 }
+                scheduleResetProbe()
             }
         }
     }
+
+    /**
+     * Says out loud that a window the user was up against has rolled over.
+     *
+     * A balloon rather than anything in the panel, because the point is to
+     * reach someone who stopped looking at it — being told you can carry on is
+     * only useful if you had stopped.
+     */
+    private fun announce(event: LimitReset.Event) {
+        com.intellij.notification.NotificationGroupManager.getInstance()
+            .getNotificationGroup("Claude Brains")
+            .createNotification(LimitReset.message(event), com.intellij.notification.NotificationType.INFORMATION)
+            .notify(project)
+    }
+
+    /**
+     * Asks once more at the moment a full window is due to roll over.
+     *
+     * The percentages are only refreshed while the panel is on screen, since
+     * each read spawns the CLI. That is the wrong rule for exactly this case:
+     * someone waiting out a limit has usually gone and done something else. So
+     * when a window is nearly full, one further read is booked for the moment
+     * it is due — one spawn, not a poll — and the reset is noticed either way.
+     */
+    private fun scheduleResetProbe() {
+        if (limitBars().none { it.percentUsed >= LimitReset.TIGHT_PERCENT }) return
+        val at = primary()?.resetsAtMillis() ?: return
+        val delay = at + RESET_PROBE_GRACE_MS - System.currentTimeMillis()
+        if (delay <= 0) return
+
+        // One booking per reset moment: this is reached from every refresh, and
+        // the reset time stays the same across all of them.
+        val already = probeBookedFor.get()
+        if (already == at || !probeBookedFor.compareAndSet(already, at)) return
+
+        com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService().schedule(
+            { if (!project.isDisposed) refreshBars(force = true) },
+            delay,
+            java.util.concurrent.TimeUnit.MILLISECONDS
+        )
+    }
+
+    /** The reset moment a probe is already booked for, so it is booked once. */
+    private val probeBookedFor = AtomicLong(0)
 
     /**
      * Subscribes for as long as [parent] lives.
@@ -190,6 +239,9 @@ class RateLimitService(private val project: Project) {
     companion object {
         private const val USAGE_SCAN_INTERVAL_MS = 60_000L
         private const val BARS_INTERVAL_MS = 60_000L
+
+        /** The CLI's own clock is not this one's; ask a little after the moment, not on it. */
+        private const val RESET_PROBE_GRACE_MS = 30_000L
 
         fun getInstance(project: Project): RateLimitService =
             project.getService(RateLimitService::class.java)

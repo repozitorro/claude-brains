@@ -6,6 +6,12 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.10.3
+
+- **Fixes Run and Skip, which broke the whole panel in 0.10.2.** Clicking one followed the link instead of answering: the conversation was replaced by a browser error page while the turn sat waiting for an answer that could no longer be sent. Every action link in the page is now caught by a single handler that exists before the markup does, so no future button can land in the same gap.
+- **A notification when a limit you were up against resets.** Only for windows that had actually got tight — one resets every few hours whether or not anyone was waiting. It waits for evidence rather than for the clock: the next report has to say both a smaller percentage and a different reset time.
+- When a window is nearly full, the plugin books **one** further usage read for the moment it is due, so the reset is noticed even if you closed the panel and walked away.
+
 ## 0.10.2
 
 - **The question is now asked on the command it is about.** It used to be a block of its own at the end of the conversation, so it drifted to the bottom as Claude kept writing above it, and the same command appeared twice — once as the row that ran it, once as the card that asked. One row now: the command, **Run** and **Skip**, then its output in the same place.
