@@ -266,7 +266,7 @@ object MessageRenderer {
         danger: Boolean = false,
         primary: Boolean = false
     ): String {
-        val token = "claudebrains:$msgIndex:$action:$editIndex"
+        val token = ChatLink(msgIndex, action, editIndex).token()
         val cls = "cb-btn" + (if (danger) " danger" else "") + (if (primary) " primary" else "")
         return "<a class='$cls' href='$token' data-cb='$token'>$text</a>"
     }

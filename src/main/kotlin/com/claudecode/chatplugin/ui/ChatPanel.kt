@@ -1505,56 +1505,34 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
      */
     private fun handleEditLink(href: String) {
         ApplicationManager.getApplication().invokeLater {
-            val parts = href.split(":")
-            if (parts.size != 4 || parts[0] != "claudebrains") return@invokeLater
-            val msgIndex = parts[1].toIntOrNull() ?: return@invokeLater
-            val editIndex = parts[3].toIntOrNull() ?: return@invokeLater
-            val message = session.messages.getOrNull(msgIndex) ?: return@invokeLater
+            val link = ChatLink.parse(href) ?: return@invokeLater
+            val message = session.messages.getOrNull(link.messageIndex) ?: return@invokeLater
+            val index = link.messageIndex
 
-            if (parts[2] == "permterminal") {
-                runInTerminal(message)
-                return@invokeLater
-            }
-            if (parts[2] == "opensettings") {
-                cliService.openSettings()
-                return@invokeLater
-            }
-            if (parts[2] in APPROVAL_ACTIONS) {
-                answerApproval(message, msgIndex, editIndex, parts[2])
-                return@invokeLater
-            }
-            if (parts[2] == "fixproblems") {
-                message.problems?.takeIf { it.isNotEmpty() }?.let { sendPrompt(ProjectProblems.describe(it)) }
-                return@invokeLater
-            }
+            when (link.action) {
+                "permterminal" -> runInTerminal(message)
+                "opensettings" -> cliService.openSettings()
 
-            val answer = when (parts[2]) {
-                "permallow" -> PermissionRequest.Answer.ALLOWED_HERE
-                "permalways" -> PermissionRequest.Answer.ALLOWED_ALWAYS
-                "permdeny" -> PermissionRequest.Answer.DENIED
-                else -> null
-            }
-            if (answer != null) {
-                answerPermission(message, msgIndex, answer)
-                return@invokeLater
-            }
+                in APPROVAL_ACTIONS -> answerApproval(message, index, link.itemIndex, link.action)
 
-            if (parts[2] == "restorehere") {
-                restoreFilesToBefore(msgIndex)
-                return@invokeLater
-            }
+                "fixproblems" ->
+                    message.problems?.takeIf { it.isNotEmpty() }?.let { sendPrompt(ProjectProblems.describe(it)) }
 
-            if (parts[2] == "revertall") {
-                val targets = message.edits.filter { it.isResolved && it.canRevert }
-                val reverted = targets.count { DiffReviewer.revert(project, it) }
-                statusLabel.text = "reverted $reverted of ${targets.size} file(s)"
-                return@invokeLater
-            }
+                "permallow" -> answerPermission(message, index, PermissionRequest.Answer.ALLOWED_HERE)
+                "permalways" -> answerPermission(message, index, PermissionRequest.Answer.ALLOWED_ALWAYS)
+                "permdeny" -> answerPermission(message, index, PermissionRequest.Answer.DENIED)
 
-            val edit = message.edits.getOrNull(editIndex) ?: return@invokeLater
-            when (parts[2]) {
-                "diff" -> DiffReviewer.showDiff(project, edit)
-                "revert" -> {
+                "restorehere" -> restoreFilesToBefore(index)
+
+                "revertall" -> {
+                    val targets = message.edits.filter { it.isResolved && it.canRevert }
+                    val reverted = targets.count { DiffReviewer.revert(project, it) }
+                    statusLabel.text = "reverted $reverted of ${targets.size} file(s)"
+                }
+
+                // The rest address one edit, and say nothing without it.
+                "diff" -> message.edits.getOrNull(link.itemIndex)?.let { DiffReviewer.showDiff(project, it) }
+                "revert" -> message.edits.getOrNull(link.itemIndex)?.let { edit ->
                     val ok = DiffReviewer.revert(project, edit)
                     statusLabel.text = if (ok) "reverted ${edit.fileName}" else "could not revert ${edit.fileName}"
                 }
