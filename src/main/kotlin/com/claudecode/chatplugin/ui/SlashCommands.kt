@@ -51,8 +51,13 @@ object SlashCommands {
         if (!prefix.startsWith("/")) return emptyList()
         val known = ALL.associateBy { it.name.removePrefix("/").lowercase() }
         val live = capabilities?.allSlashNames().orEmpty()
+        val skills = capabilities?.skills.orEmpty().map { it.removePrefix("/").lowercase() }.toSet()
         val pool = if (live.isEmpty()) ALL else live.map { name ->
-            known[name.lowercase()] ?: Command("/$name", "")
+            known[name.lowercase()]
+                // The CLI sends names and nothing else, so a row would otherwise
+                // be a bare word. Saying where it came from is the one thing
+                // that can be said truthfully without inventing a description.
+                ?: Command("/$name", if (name.lowercase() in skills) "Skill" else "Command from your CLI")
         }
         return pool.filter { it.name.startsWith(prefix, ignoreCase = true) }
     }
