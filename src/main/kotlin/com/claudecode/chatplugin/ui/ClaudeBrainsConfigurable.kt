@@ -33,6 +33,11 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
     private val allowedField = JBTextField()
     private val disallowedField = JBTextField()
     private val askBeforeActingBox = javax.swing.JCheckBox("Ask before running something that needs permission")
+    private val effortCombo = JComboBox<String>().apply {
+        listOf("", "low", "medium", "high", "xhigh", "max").forEach { addItem(it) }
+    }
+    private val budgetField = JBTextField()
+    private val extraDirsField = JBTextArea(2, 40)
     // Multi-line: one entry per line is easier to read than a separator-joined
     // string, and Windows paths contain the separator a single line would use.
     private val extraPathField = JBTextArea(3, 40)
@@ -65,6 +70,22 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             .addLabeledComponent("Claude CLI command or path:", commandField, 1, false)
             .addLabeledComponent("Default model:", modelCombo, 1, false)
             .addLabeledComponent("Permission mode:", permissionCombo, 1, false)
+            .addLabeledComponent("Default effort:", effortCombo, 1, false)
+            .addComponent(JLabel(
+                "<html><small>How much thinking a turn spends, and so roughly what it costs. " +
+                    "Empty leaves the CLI on its own. Each chat can override it from its toolbar.</small></html>"
+            ))
+            .addLabeledComponent("Spending cap per turn (USD):", budgetField, 1, false)
+            .addComponent(JLabel(
+                "<html><small>Empty means none, which is the CLI's own behaviour. A cap stops a turn " +
+                    "part-way when it is reached, so set it as a guard against runaway cost rather than " +
+                    "as a budget you expect to meet.</small></html>"
+            ))
+            .addLabeledComponent("Extra directories:", JBScrollPane(extraDirsField), 1, false)
+            .addComponent(JLabel(
+                "<html><small>One per line. The project is always allowed; this is for the repository " +
+                    "next door that the work genuinely spans.</small></html>"
+            ))
             .addComponent(askBeforeActingBox)
             .addComponent(JLabel(
                 "<html><small>The CLI pauses and the chat shows a card with <b>Run</b> and <b>Skip</b>, " +
@@ -97,9 +118,9 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
                 "<html><small>Defaults for new chats — each chat can override both from its own toolbar.<br>" +
                     "<b>Accept edits</b> (the default) applies file edits and then marks each one up in the " +
                     "editor for you to accept or reject; <b>Plan</b> is read-only; <b>Bypass permissions</b> " +
-                    "runs everything unprompted. <b>CLI default</b> passes no flag at all — but note this " +
-                    "chat has no terminal, so anything your CLI would prompt about is refused rather than " +
-                    "asked. The remaining modes are passed through as-is.</small></html>"
+                    "runs everything unprompted. <b>CLI default</b> passes no flag at all. " +
+                    "<b>Auto</b> and <b>Don't ask</b> decide for themselves and are never asked about " +
+                    "here, whatever the checkbox above says — that is what those modes are for.</small></html>"
             ))
             .addSeparator()
             .addLabeledComponent("MCP servers:", refreshMcpButton, 1, false)
@@ -123,9 +144,33 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
             disallowedField.text != settings.disallowedTools ||
             extraPathField.text != settings.extraPath ||
             extraEnvField.text != settings.extraEnv ||
-            askBeforeActingBox.isSelected != settings.askBeforeActing
+            askBeforeActingBox.isSelected != settings.askBeforeActing ||
+            (effortCombo.selectedItem as? String).orEmpty() != settings.defaultEffort ||
+            budgetField.text != settings.maxBudgetUsd ||
+            extraDirsField.text != settings.extraDirs
+
+    /**
+     * Caught here rather than by the CLI, which rejects it per turn.
+     *
+     * `--max-budget-usd abc` is refused with "must be a positive number greater
+     * than 0" — and refused every time, so a typo in this box would break every
+     * message until someone thought to look at a setting they last touched days
+     * ago. The dialog is where it can still be a typo.
+     */
+    private fun validateBudget() {
+        val text = budgetField.text.trim()
+        if (text.isEmpty()) return
+        val amount = text.toDoubleOrNull()
+        if (amount == null || amount <= 0) {
+            throw com.intellij.openapi.options.ConfigurationException(
+                "The spending cap must be a positive number of dollars, for example 2.50 — " +
+                    "or empty for no cap."
+            )
+        }
+    }
 
     override fun apply() {
+        validateBudget()
         settings.claudeCommand = commandField.text.trim().ifBlank { "claude" }
         settings.defaultModel = (modelCombo.selectedItem as ModelChoice).id.orEmpty()
         settings.permissionMode = (permissionCombo.selectedItem as PermissionChoice).id.orEmpty()
@@ -134,6 +179,9 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
         settings.extraPath = extraPathField.text.trim()
         settings.extraEnv = extraEnvField.text.trim()
         settings.askBeforeActing = askBeforeActingBox.isSelected
+        settings.defaultEffort = (effortCombo.selectedItem as? String).orEmpty()
+        settings.maxBudgetUsd = budgetField.text.trim()
+        settings.extraDirs = extraDirsField.text.trim()
     }
 
     override fun reset() {
@@ -145,5 +193,8 @@ class ClaudeBrainsConfigurable(private val project: Project) : Configurable {
         extraPathField.text = settings.extraPath
         extraEnvField.text = settings.extraEnv
         askBeforeActingBox.isSelected = settings.askBeforeActing
+        effortCombo.selectedItem = settings.defaultEffort
+        budgetField.text = settings.maxBudgetUsd
+        extraDirsField.text = settings.extraDirs
     }
 }

@@ -37,7 +37,32 @@ data class TurnRequest(
      * Null means don't ask — the mode makes the question moot, or no endpoint
      * could be opened — and the CLI goes back to deciding alone.
      */
-    val approvalConfigPath: String? = null
+    val approvalConfigPath: String? = null,
+    /** Subagent to run this turn as, from the CLI's own list. Null = its default. */
+    val agent: String? = null,
+    /** `low`…`max`, the direct lever on how long a turn thinks. Null = the CLI's default. */
+    val effort: String? = null,
+    /**
+     * A ceiling on what one turn may spend, in dollars.
+     *
+     * Blank means no ceiling, which is the CLI's own behaviour and stays the
+     * default: a cap that stops a turn half-done is its own kind of cost.
+     */
+    val maxBudgetUsd: String = "",
+    /**
+     * Directories outside the project the CLI may touch.
+     *
+     * The working directory is always allowed; this is for the repository next
+     * door that the work genuinely spans.
+     */
+    val extraDirs: List<String> = emptyList(),
+    /**
+     * Whether resuming should branch rather than continue.
+     *
+     * Only meaningful with [resumeId]: it tells the CLI to keep the history and
+     * carry on under a new id, leaving the original where it was.
+     */
+    val forkSession: Boolean = false
 )
 
 /**
@@ -95,9 +120,30 @@ object ClaudeCommandBuilder {
         request.resumeId?.let {
             add("--resume")
             add(it)
+            // Only says anything alongside --resume, so it is written where it
+            // is true rather than as a flag of its own.
+            if (request.forkSession) add("--fork-session")
         }
         request.model?.let {
             add("--model")
+            add(it)
+        }
+        request.agent?.takeIf { it.isNotBlank() }?.let {
+            add("--agent")
+            add(it)
+        }
+        request.effort?.takeIf { it.isNotBlank() }?.let {
+            add("--effort")
+            add(it)
+        }
+        request.maxBudgetUsd.takeIf { it.isNotBlank() }?.let {
+            add("--max-budget-usd")
+            add(it)
+        }
+        // Repeated rather than joined: the flag takes a list, and a path with a
+        // space in it survives as its own argument.
+        request.extraDirs.filter { it.isNotBlank() }.forEach {
+            add("--add-dir")
             add(it)
         }
     }

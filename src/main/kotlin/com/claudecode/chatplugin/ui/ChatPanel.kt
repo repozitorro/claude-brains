@@ -2,6 +2,7 @@ package com.claudecode.chatplugin.ui
 
 import com.claudecode.chatplugin.ClaudeCliService
 import com.claudecode.chatplugin.ClaudeCodeSettings
+import com.claudecode.chatplugin.ClaudeSessionManager
 import com.claudecode.chatplugin.model.ChatMessage
 import com.claudecode.chatplugin.model.ClaudeSession
 import com.claudecode.chatplugin.model.FileEdit
@@ -137,6 +138,54 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         toolTipText = "Model for this chat"
 
         addActionListener { session.selectedModel = (selectedItem as ModelChoice).id }
+    }
+
+    /**
+     * How hard the model works on a turn — the CLI's own `--effort`.
+     *
+     * A direct lever on what a turn costs, which matters more here than
+     * anywhere: the panel already shows how much of the week is gone.
+     */
+    private val effortSelector = JComboBox<String>().apply {
+        EFFORT_LEVELS.forEach { addItem(it) }
+        selectedItem = session.selectedEffort ?: settings.defaultEffort.ifBlank { CLI_DEFAULT }
+        toolTipText = "How much thinking this chat spends per turn"
+        // Secondary controls, and the widest agent names ("general-purpose")
+        // would otherwise set the width for the whole row.
+        preferredSize = Dimension(JBUI.scale(118), preferredSize.height)
+        addActionListener {
+            session.selectedEffort = (selectedItem as? String)?.takeIf { it != CLI_DEFAULT }
+        }
+    }
+
+    /**
+     * Which subagent runs the turn.
+     *
+     * Populated from the CLI itself — nothing written here could know which
+     * agents a given machine has — so it holds only the default until a turn
+     * has reported the list.
+     */
+    private val agentSelector = JComboBox<String>().apply {
+        addItem(DEFAULT_AGENT)
+        toolTipText = "Agent for this chat"
+        preferredSize = Dimension(JBUI.scale(118), preferredSize.height)
+        addActionListener {
+            session.selectedAgent = (selectedItem as? String)?.takeIf { it != DEFAULT_AGENT }
+        }
+    }
+
+    /** Fills the agent list in once the CLI has said what it has. */
+    private fun refreshAgentChoices() {
+        val agents = session.capabilities?.agents.orEmpty()
+        if (agents.isEmpty()) return
+        val chosen = session.selectedAgent
+        if ((0 until agentSelector.itemCount).map { agentSelector.getItemAt(it) } == listOf(DEFAULT_AGENT) + agents) {
+            return // already showing this list; leave the selection alone
+        }
+        agentSelector.removeAllItems()
+        agentSelector.addItem(DEFAULT_AGENT)
+        agents.forEach { agentSelector.addItem(it) }
+        agentSelector.selectedItem = chosen ?: DEFAULT_AGENT
     }
 
     private val modeSelector = JComboBox<PermissionChoice>().apply {
@@ -279,11 +328,16 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // account rather than as one more control.
         val controlsRow = JPanel(BorderLayout()).apply {
             isOpaque = false
-            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply {
+            // WrapLayout, not FlowLayout: this sits in WEST, which grants
+            // preferred width and nothing less, so a row that cannot fit has to
+            // report a taller size rather than run on under the buttons in EAST.
+            add(JPanel(WrapLayout(java.awt.FlowLayout.LEFT, 4, 2)).apply {
                 isOpaque = false
                 add(modelSelector)
                 add(modeSelector)
-            }, BorderLayout.WEST)
+                add(effortSelector)
+                add(agentSelector)
+            }, BorderLayout.CENTER)
             add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0)).apply {
                 isOpaque = false
                 add(
@@ -625,7 +679,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 if (e.keyCode == KeyEvent.VK_ENTER || e.keyCode == KeyEvent.VK_ESCAPE) return
                 val text = inputArea.text
                 if (text.startsWith("/") && !text.contains("\n")) {
-                    val matches = SlashCommands.matching(text)
+                    val matches = SlashCommands.matching(text, session.capabilities)
                     if (matches.isNotEmpty()) showSlashPopup(matches)
                     return
                 }
@@ -1097,6 +1151,30 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private val awaitingCall =
         java.util.concurrent.ConcurrentHashMap<String, com.claudecode.chatplugin.permissions.ApprovalRequest>()
 
+    /**
+     * Sends back the option the user picked.
+     *
+     * The tool itself is declined, because running `AskUserQuestion` needs a
+     * terminal this chat has not got — but the answer goes with the refusal,
+     * which is the whole thing the model was waiting for. From where the user
+     * sits, they answered a question.
+     */
+    private fun answerQuestion(message: ChatMessage, index: Int, callIndex: Int, encoded: Int) {
+        val request = message.toolCalls.getOrNull(callIndex)?.approval ?: message.approvalRequest ?: return
+        if (request.isDecided) return
+
+        val questions = com.claudecode.chatplugin.permissions.UserQuestion.parseAll(request.input)
+        val (question, option) =
+            com.claudecode.chatplugin.permissions.UserQuestion.decodeChoice(questions, encoded) ?: return
+
+        request.decide(
+            ApprovalDecision.Deny(com.claudecode.chatplugin.permissions.UserQuestion.answer(question, option))
+        )
+        if (message.approvalRequest === request) message.text = "Answered: ${option.label}"
+        renderNow(index, message)
+        statusLabel.text = "answered ${option.label}"
+    }
+
     /** Answers the card, which releases the CLI thread parked on it. */
     private fun answerApproval(message: ChatMessage, index: Int, callIndex: Int, action: String) {
         val request = message.toolCalls.getOrNull(callIndex)?.approval
@@ -1122,6 +1200,43 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         if (message.approvalRequest === request) message.text = record(request, decision)
         renderNow(index, message)
         statusLabel.text = if (decision is ApprovalDecision.Allow) "allowed" else "skipped"
+    }
+
+    /**
+     * Opens a new chat carrying on from [index], leaving this one alone.
+     *
+     * The CLI does the real work: `--resume` with `--fork-session` keeps the
+     * history and continues under a new id, so both conversations remember
+     * everything up to the branch and neither can write into the other. The
+     * transcript here is copied so the new tab reads as a continuation rather
+     * than starting blank on top of a context you cannot see.
+     */
+    private fun branchFrom(index: Int) {
+        val manager = project.getService(ClaudeSessionManager::class.java)
+        val branch = manager.createSession("${session.displayName} ↳")
+        branch.cliSessionId = session.cliSessionId
+        branch.forkOnNextTurn = session.cliSessionId != null
+        branch.selectedModel = session.selectedModel
+        branch.selectedAgent = session.selectedAgent
+        branch.selectedEffort = session.selectedEffort
+        branch.permissionMode = session.permissionMode
+        // Text only, and freshly built: `copy()` would hand both chats the same
+        // mutable lists of edits, and reverting a file in one would appear to
+        // have happened in the other. This is the same reduction the transcript
+        // survives a restart as.
+        session.messages.take(index + 1).forEach {
+            branch.messages.add(ChatMessage(it.role, it.text, it.thinking))
+        }
+
+        // Creating it is enough: the tool window follows the session list and
+        // builds the tab itself.
+        statusLabel.text = if (branch.forkOnNextTurn) {
+            "branched — the original is untouched"
+        } else {
+            // Nothing to fork from yet: this chat has never run a turn, so the
+            // new one simply starts where it would have.
+            "branched"
+        }
     }
 
     /** One line saying what was asked and what was answered. */
@@ -1346,6 +1461,15 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 }
             }
 
+            override fun onCapabilities(capabilities: com.claudecode.chatplugin.cli.SessionCapabilities) {
+                ApplicationManager.getApplication().invokeLater {
+                    session.capabilities = capabilities
+                    // The agent list is only known once a turn has reported it,
+                    // so the selector fills in rather than starting complete.
+                    refreshAgentChoices()
+                }
+            }
+
             override fun onMcpFailures(failed: List<String>) {
                 ApplicationManager.getApplication().invokeLater {
                     addSystemBubble(
@@ -1375,20 +1499,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     // Nothing is left to receive an answer; the service has
                     // already refused whatever was still open.
                     awaitingCall.clear()
-                    if (result.isError) {
-                        // A failed turn carries its reason in the result event rather
-                        // than as streamed text, so surface it instead of a blank reply.
-                        val reason = result.errorMessage?.takeIf { it.isNotBlank() }
-                            ?: "the turn ended with an error"
-                        val hint = if (result.apiErrorStatus == 401) {
-                            authBanner.isVisible = true
-                            "\n\nSign in again using the banner above, then send this message once more."
-                        } else {
-                            ""
-                        }
-                        val prefix = if (assistantMessage.text.isBlank()) "" else "\n\n"
-                        assistantMessage.text += "$prefix**Error:** $reason$hint"
-                    }
+                    if (TurnOutcome.needsSignIn(result)) authBanner.isVisible = true
+                    TurnOutcome.errorText(result, assistantMessage.text.isBlank())
+                        ?.let { assistantMessage.text += it }
                     // The CLI has finished writing to disk; reconstruct each edit's
                     // before/after now so the diff/revert links become live.
                     assistantMessage.edits.forEach { edit ->
@@ -1414,26 +1527,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     if (assistantMessage.edits.isNotEmpty()) {
                         val outcome = reviewService.submit(assistantMessage.edits)
                         if (outcome.unreviewable.isNotEmpty()) {
-                            addSystemBubble(
-                                "Couldn't mark up ${outcome.unreviewable.joinToString { it.fileName }} for inline " +
-                                    "review — the pre-edit content can't be reconstructed exactly, so accepting " +
-                                    "or rejecting line by line would be guesswork. Use the **diff** link above " +
-                                    "to review the whole file instead."
-                            )
+                            addSystemBubble(TurnOutcome.unreviewableMessage(outcome.unreviewable))
                         }
                         if (outcome.conflicted.isNotEmpty()) {
-                            // Not a limitation to apologise for — two versions of
-                            // the file exist and the user is the only one who can
-                            // choose. Say exactly what is where.
-                            addSystemBubble(
-                                "⚠️ **You have unsaved changes** in " +
-                                    "${outcome.conflicted.joinToString { it.fileName }}, and Claude edited " +
-                                    "the same file on disk.\n\n" +
-                                    "Your version is untouched in the editor, so nothing of yours was lost — " +
-                                    "but it was left out of inline review, because reloading it would have " +
-                                    "discarded your work. Use the **diff** link above to see Claude's version, " +
-                                    "then either save yours over it or reload the file from disk to take Claude's."
-                            )
+                            addSystemBubble(TurnOutcome.conflictedMessage(outcome.conflicted))
                         }
                     }
 
@@ -1506,6 +1603,13 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         /** The three answers to a live approval card. */
         val APPROVAL_ACTIONS = setOf("askrun", "askalways", "askskip")
 
+
+        /** What the CLI accepts for --effort, plus the entry that passes none. */
+        /** The entry in each selector that passes no flag at all. */
+        const val CLI_DEFAULT = "Default effort"
+        const val DEFAULT_AGENT = "Default agent"
+        val EFFORT_LEVELS = listOf(CLI_DEFAULT, "low", "medium", "high", "xhigh", "max")
+
         /** Marks a symbol entry in the `@` popup, where everything else is a path. */
         const val SYMBOL_PREFIX = "◆ "
         const val RENDER_INTERVAL_MS = 50
@@ -1532,6 +1636,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 "opensettings" -> cliService.openSettings()
 
                 in APPROVAL_ACTIONS -> answerApproval(message, index, link.itemIndex, link.action)
+                "askanswer" -> answerQuestion(message, index, link.itemIndex, link.optionIndex)
 
                 "fixproblems" ->
                     message.problems?.takeIf { it.isNotEmpty() }?.let { sendPrompt(ProjectProblems.describe(it)) }
@@ -1541,6 +1646,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 "permdeny" -> answerPermission(message, index, PermissionRequest.Answer.DENIED)
 
                 "restorehere" -> restoreFilesToBefore(index)
+                "branchhere" -> branchFrom(index)
 
                 "revertall" -> {
                     val targets = message.edits.filter { it.isResolved && it.canRevert }

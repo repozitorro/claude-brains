@@ -94,7 +94,12 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
                 .joinToString(" "),
             disallowedTools = settings.disallowedTools,
             model = session.selectedModel,
+            agent = session.selectedAgent,
+            effort = session.selectedEffort ?: settings.defaultEffort.takeIf { it.isNotBlank() },
+            maxBudgetUsd = settings.maxBudgetUsd,
+            extraDirs = settings.extraDirList(),
             resumeId = session.cliSessionId.takeIf { allowResume },
+            forkSession = session.forkOnNextTurn,
             // Passed whenever there is one; whether it is used at all is a
             // question about the permission mode, and that rule lives with the
             // rest of the flag rules in ClaudeCommandBuilder.
@@ -172,6 +177,11 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
                 parser.parse(line, listener)?.let { completed = it }
             }
         }
+
+        // The branch has happened once the CLI answers with an id of its own.
+        // Until then the flag stands, so a failed turn branches next time rather
+        // than writing into the conversation it was branched from.
+        if (request.forkSession && session.cliSessionId != request.resumeId) session.forkOnNextTurn = false
 
         val exitCode = process.waitFor()
         stderrThread.join(STDERR_JOIN_MS)

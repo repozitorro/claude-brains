@@ -51,7 +51,24 @@ class ClaudeCodeSettings : PersistentStateComponent<ClaudeCodeSettings.State> {
          * off — and then the plugin behaves exactly as it did before: the CLI
          * decides alone and reports what it refused.
          */
-        var askBeforeActing: Boolean = true
+        var askBeforeActing: Boolean = true,
+
+        /**
+         * A ceiling on what one turn may spend, in dollars. Blank = none.
+         *
+         * Empty by default on purpose: a cap that stops a turn half-way has its
+         * own cost, and nobody should discover one they did not set.
+         */
+        var maxBudgetUsd: String = "",
+
+        /**
+         * Directories outside the project the CLI may read and write, one per
+         * line — the repository next door that the work genuinely spans.
+         */
+        var extraDirs: String = "",
+
+        /** Default effort for new chats: low…max. Blank = the CLI's own. */
+        var defaultEffort: String = ""
     )
 
     private var state = State()
@@ -92,6 +109,22 @@ class ClaudeCodeSettings : PersistentStateComponent<ClaudeCodeSettings.State> {
     var askBeforeActing: Boolean
         get() = state.askBeforeActing
         set(value) { state.askBeforeActing = value }
+
+    var maxBudgetUsd: String
+        get() = state.maxBudgetUsd
+        set(value) { state.maxBudgetUsd = value }
+
+    var extraDirs: String
+        get() = state.extraDirs
+        set(value) { state.extraDirs = value }
+
+    /** One directory per line, blanks dropped. */
+    fun extraDirList(): List<String> =
+        state.extraDirs.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+
+    var defaultEffort: String
+        get() = state.defaultEffort
+        set(value) { state.defaultEffort = value }
 
     companion object {
         fun getInstance(project: Project): ClaudeCodeSettings =

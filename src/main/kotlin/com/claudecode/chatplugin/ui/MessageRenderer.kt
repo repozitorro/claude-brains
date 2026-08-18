@@ -224,11 +224,57 @@ object MessageRenderer {
      * carried in the link so the click lands on the right question when a turn
      * has several in flight.
      */
+    /**
+     * A question from Claude, with its options as the answers.
+     *
+     * It reaches the same endpoint as a permission request, but "Run" and
+     * "Skip" are not answers to *tabs or spaces* — so when the call is
+     * [UserQuestion.TOOL_NAME], the question is put properly instead.
+     */
+    private fun questionBody(
+        questions: List<com.claudecode.chatplugin.permissions.UserQuestion>,
+        msgIndex: Int,
+        callIndex: Int
+    ): String = buildString {
+        append("<div class='cb-ask' data-state='pending'>")
+        questions.forEachIndexed { questionIndex, question ->
+            if (question.header.isNotBlank()) {
+                append("<div class='cb-ask-head'>").append(escape(question.header)).append("</div>")
+            }
+            append("<div class='cb-q'>").append(escape(question.question)).append("</div>")
+            append("<div class='cb-ask-actions cb-q-options'>")
+            question.options.forEachIndexed { optionIndex, option ->
+                // The option's own index, offset by which question it belongs
+                // to, so one handler can find its way back to both.
+                val encoded = com.claudecode.chatplugin.permissions.UserQuestion
+                    .encodeChoice(questionIndex, optionIndex)
+                append(
+                    link(
+                        msgIndex, "askanswer", callIndex,
+                        escape(option.label),
+                        primary = optionIndex == 0,
+                        optionIndex = encoded,
+                        title = option.description
+                    )
+                )
+            }
+            append("</div>")
+        }
+        append("<div class='cb-ask-actions'>")
+            .append(link(msgIndex, "askskip", callIndex, "Don't answer"))
+            .append("</div></div>")
+    }
+
     private fun approvalBody(
         request: com.claudecode.chatplugin.permissions.ApprovalRequest,
         msgIndex: Int,
         callIndex: Int
     ): String {
+        // A question is not a permission, and the two cannot share a card.
+        if (request.toolName == com.claudecode.chatplugin.permissions.UserQuestion.TOOL_NAME) {
+            val questions = com.claudecode.chatplugin.permissions.UserQuestion.parseAll(request.input)
+            if (questions.isNotEmpty()) return questionBody(questions, msgIndex, callIndex)
+        }
         val always = com.claudecode.chatplugin.permissions.AutoApproval
             .label(request.toolName, request.input)
             ?.let { link(msgIndex, "askalways", callIndex, "Always allow ${escape(it)}") }
@@ -264,11 +310,16 @@ object MessageRenderer {
         editIndex: Int,
         text: String,
         danger: Boolean = false,
-        primary: Boolean = false
+        primary: Boolean = false,
+        optionIndex: Int = ChatLink.NONE,
+        title: String = ""
     ): String {
-        val token = ChatLink(msgIndex, action, editIndex).token()
+        val token = ChatLink(msgIndex, action, editIndex, optionIndex).token()
         val cls = "cb-btn" + (if (danger) " danger" else "") + (if (primary) " primary" else "")
-        return "<a class='$cls' href='$token' data-cb='$token'>$text</a>"
+        // An option's description is worth having, but not worth a second line
+        // in a card that is already a question — so it hovers.
+        val tip = if (title.isBlank()) "" else " title='${escape(title)}'"
+        return "<a class='$cls' href='$token' data-cb='$token'$tip>$text</a>"
     }
 
     /** Inner-HTML fragment for [message] (no `<html>` wrapper). */
@@ -295,6 +346,13 @@ object MessageRenderer {
             // was refused and why, then answer.
             message.permissionRequest?.let { body.append(permissionBlock(it, msgIndex)) }
             message.approvalRequest?.let { body.append(approvalBlock(it, msgIndex)) }
+            // Offered on your own turns, because those are the points a
+            // conversation is worth going back to and taking differently.
+            if (message.role == com.claudecode.chatplugin.model.Role.USER) {
+                body.append("<div class='cb-perm'>")
+                    .append(link(msgIndex, "branchhere", -1, "branch from here"))
+                    .append("</div>")
+            }
             message.problems?.takeIf { it.isNotEmpty() }?.let {
                 body.append("<div class='cb-perm'>")
                     .append(link(msgIndex, "fixproblems", 0, "Ask Claude to fix these"))

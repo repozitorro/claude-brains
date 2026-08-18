@@ -56,6 +56,9 @@ interface StreamListener {
     fun onRateLimit(rateLimit: ClaudeSession.RateLimit) {}
     /** MCP servers that did not come up, as "name (status)" strings. */
     fun onMcpFailures(failed: List<String>) {}
+
+    /** What the CLI says it can do this turn — commands, skills, agents. */
+    fun onCapabilities(capabilities: SessionCapabilities) {}
     fun onSessionId(cliSessionId: String)
     /** The stored `--resume` id was gone, so the turn was retried with a fresh context. */
     fun onSessionExpired() {}

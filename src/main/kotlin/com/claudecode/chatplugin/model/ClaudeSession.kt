@@ -15,6 +15,32 @@ class ClaudeSession(var displayName: String) {
     /** The CLI's own session id, captured from the first streamed response. */
     var cliSessionId: String? = null
 
+    /**
+     * What this CLI reported it can do, from the last turn's `init` event.
+     *
+     * Not persisted: it describes the installed CLI, which can change between
+     * sessions, and the next turn will say so again.
+     */
+    @Volatile
+    var capabilities: com.claudecode.chatplugin.cli.SessionCapabilities? = null
+
+    /**
+     * Whether the next turn should branch from [cliSessionId] rather than
+     * continue it.
+     *
+     * Set when a chat is opened as a branch of another. Cleared once the CLI
+     * has answered with an id of its own — and not before, so a turn that fails
+     * branches on the next attempt instead of writing into the original.
+     */
+    @Volatile
+    var forkOnNextTurn: Boolean = false
+
+    /** Subagent for this chat, from the CLI's own list. Null = its default. */
+    var selectedAgent: String? = null
+
+    /** Effort level for this chat: low…max. Null = the CLI's default. */
+    var selectedEffort: String? = null
+
     /** Model override, e.g. "claude-opus-5" or the alias "opus". Null = CLI default. */
     var selectedModel: String? = null
 

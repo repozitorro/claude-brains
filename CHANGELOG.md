@@ -6,6 +6,16 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.11.0
+
+- **Claude can ask you a question, and you can answer it.** When it needs to know something it puts the question in the chat with its options as buttons, instead of guessing. Since 0.10.4 those were arriving and being drawn as a permission card — **Run** or **Skip** in answer to *tabs or spaces*.
+- **The "/" popup lists what your CLI actually has**, skills and your own commands included, read from the CLI itself each turn. The old list was seventeen names typed by hand and had drifted: it knew nothing of the eighteen skills on one machine.
+- **An agent and an effort level per chat**, beside the model. Effort — low through max — is the most direct lever there is on what a turn costs.
+- **A spending cap and extra directories**, in Settings. The cap guards against a runaway turn; extra directories are for the repository next door that the work genuinely spans. Both are off by default.
+- **Branch a conversation from any of your messages.** The new chat keeps everything up to that point and continues under its own id, so the original is left exactly as it was — verified: the original transcript does not gain a byte.
+- The toolbar no longer runs its dropdowns underneath the buttons beside them, and the agent selector no longer calls itself "Default effort".
+- A chat's agent and effort now survive an IDE restart, as its model and permission mode already did.
+
 ## 0.10.4
 
 - **You are asked once, however many times the CLI asks.** It abandons a permission request after about a minute and repeats it, up to four times, before giving up on the turn — so thinking for two minutes used to hand you a stack of identical cards. Repeats now wait on the answer you are already giving.

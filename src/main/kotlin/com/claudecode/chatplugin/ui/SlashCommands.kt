@@ -1,11 +1,16 @@
 package com.claudecode.chatplugin.ui
 
 /**
- * Known Claude Code CLI slash commands, used to power the "/" autocomplete
- * popup in the prompt input. This list can drift from what your installed
- * CLI version actually supports - run `claude` and type `/` to check the
- * live list, then update this if needed. Grouped with short descriptions so
- * the popup is self-explanatory.
+ * What the "/" popup offers.
+ *
+ * The list below is a fallback, and used to be the whole story — with a comment
+ * admitting it would drift from whatever CLI was installed. It had drifted: it
+ * knew nothing of the eighteen skills on one user's machine, or of any command
+ * they had written themselves.
+ *
+ * The CLI names all of them in its `init` event, so once a turn has run, that
+ * is what the popup shows. The fallback covers the first turn of a fresh chat,
+ * when nothing has been reported yet.
  */
 object SlashCommands {
     data class Command(val name: String, val description: String)
@@ -30,7 +35,30 @@ object SlashCommands {
         Command("/vim", "Toggle vim key bindings for the prompt")
     )
 
-    fun matching(prefix: String): List<Command> =
-        if (!prefix.startsWith("/")) emptyList()
-        else ALL.filter { it.name.startsWith(prefix, ignoreCase = true) }
+    fun matching(prefix: String): List<Command> = matching(prefix, null)
+
+    /**
+     * Matches against what [capabilities] reported, falling back to [ALL] until
+     * a turn has told us otherwise.
+     *
+     * A live name keeps the built-in description when there is one — the CLI
+     * sends names only, and "compact" alone says less than the sentence here.
+     */
+    fun matching(
+        prefix: String,
+        capabilities: com.claudecode.chatplugin.cli.SessionCapabilities?
+    ): List<Command> {
+        if (!prefix.startsWith("/")) return emptyList()
+        val known = ALL.associateBy { it.name.removePrefix("/").lowercase() }
+        val live = capabilities?.allSlashNames().orEmpty()
+        val skills = capabilities?.skills.orEmpty().map { it.removePrefix("/").lowercase() }.toSet()
+        val pool = if (live.isEmpty()) ALL else live.map { name ->
+            known[name.lowercase()]
+                // The CLI sends names and nothing else, so a row would otherwise
+                // be a bare word. Saying where it came from is the one thing
+                // that can be said truthfully without inventing a description.
+                ?: Command("/$name", if (name.lowercase() in skills) "Skill" else "Command from your CLI")
+        }
+        return pool.filter { it.name.startsWith(prefix, ignoreCase = true) }
+    }
 }
