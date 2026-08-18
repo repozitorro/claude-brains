@@ -27,11 +27,25 @@ class ApprovalRequest(
     var decision: ApprovalDecision? = null
         private set
 
+    /**
+     * Called once this is answered, however it was answered.
+     *
+     * Set by whoever put the card on screen. Most answers are clicks, and those
+     * redraw themselves — but a turn that ends, a chat that closes and the
+     * backstop timeout all decide this from somewhere else, and a card still
+     * offering **Run** for a CLI that has stopped listening is worse than no
+     * card at all.
+     */
+    @Volatile
+    var onDecided: (() -> Unit)? = null
+
     /** First answer wins; later ones are ignored rather than racing. */
     fun decide(decision: ApprovalDecision): Boolean {
         if (future.isDone) return false
         this.decision = decision
-        return future.complete(decision)
+        val completed = future.complete(decision)
+        if (completed) runCatching { onDecided?.invoke() }
+        return completed
     }
 }
 
