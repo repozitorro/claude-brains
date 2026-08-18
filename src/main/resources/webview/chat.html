@@ -195,6 +195,14 @@ a.cb-btn.danger:hover { color: var(--err); border-color: var(--err); }
   margin-top: 9px; flex-wrap: wrap;
 }
 .cb-ask-done { font-size: 11px; color: var(--muted); }
+/* A question from Claude, which is not a permission and should not look like
+   one: the question reads as text, and the options are the answers. */
+.cb-q {
+  font-family: var(--ui); font-size: calc(var(--size) - 1px); color: var(--fg);
+  line-height: 1.5; margin: 2px 0 4px;
+}
+.cb-q-options { justify-content: flex-start; margin-top: 6px; }
+
 /* A settled question leaves one word behind on the row, so the transcript
    still shows which calls you decided rather than the CLI. */
 .cb-ask-mark {

@@ -1151,6 +1151,30 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
     private val awaitingCall =
         java.util.concurrent.ConcurrentHashMap<String, com.claudecode.chatplugin.permissions.ApprovalRequest>()
 
+    /**
+     * Sends back the option the user picked.
+     *
+     * The tool itself is declined, because running `AskUserQuestion` needs a
+     * terminal this chat has not got — but the answer goes with the refusal,
+     * which is the whole thing the model was waiting for. From where the user
+     * sits, they answered a question.
+     */
+    private fun answerQuestion(message: ChatMessage, index: Int, callIndex: Int, encoded: Int) {
+        val request = message.toolCalls.getOrNull(callIndex)?.approval ?: message.approvalRequest ?: return
+        if (request.isDecided) return
+
+        val questions = com.claudecode.chatplugin.permissions.UserQuestion.parseAll(request.input)
+        val (question, option) =
+            com.claudecode.chatplugin.permissions.UserQuestion.decodeChoice(questions, encoded) ?: return
+
+        request.decide(
+            ApprovalDecision.Deny(com.claudecode.chatplugin.permissions.UserQuestion.answer(question, option))
+        )
+        if (message.approvalRequest === request) message.text = "Answered: ${option.label}"
+        renderNow(index, message)
+        statusLabel.text = "answered ${option.label}"
+    }
+
     /** Answers the card, which releases the CLI thread parked on it. */
     private fun answerApproval(message: ChatMessage, index: Int, callIndex: Int, action: String) {
         val request = message.toolCalls.getOrNull(callIndex)?.approval
@@ -1606,6 +1630,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         /** The three answers to a live approval card. */
         val APPROVAL_ACTIONS = setOf("askrun", "askalways", "askskip")
 
+
         /** What the CLI accepts for --effort, plus the entry that passes none. */
         /** The entry in each selector that passes no flag at all. */
         const val CLI_DEFAULT = "Default effort"
@@ -1638,6 +1663,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 "opensettings" -> cliService.openSettings()
 
                 in APPROVAL_ACTIONS -> answerApproval(message, index, link.itemIndex, link.action)
+                "askanswer" -> answerQuestion(message, index, link.itemIndex, link.optionIndex)
 
                 "fixproblems" ->
                     message.problems?.takeIf { it.isNotEmpty() }?.let { sendPrompt(ProjectProblems.describe(it)) }

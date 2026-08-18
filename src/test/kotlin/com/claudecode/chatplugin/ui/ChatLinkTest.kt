@@ -47,6 +47,28 @@ class ChatLinkTest {
     }
 
     @Test
+    fun `a click that names two things carries both`() {
+        // Answering a question needs the call it belongs to and the option
+        // chosen; one index cannot say both.
+        val link = ChatLink(2, "askanswer", 1, optionIndex = 103)
+        assertEquals("claudebrains:2:askanswer:1:103", link.token())
+        assertEquals(link, ChatLink.parse(link.token()))
+    }
+
+    @Test
+    fun `the common form stays four fields`() {
+        // Everything that addresses one thing keeps the shape it has always had.
+        assertEquals("claudebrains:2:diff:1", ChatLink(2, "diff", 1).token())
+        assertEquals(ChatLink.NONE, ChatLink.parse("claudebrains:2:diff:1")!!.optionIndex)
+    }
+
+    @Test
+    fun `a fifth field that is not a number is refused`() {
+        assertNull(ChatLink.parse("claudebrains:2:askanswer:1:x"))
+        assertNull(ChatLink.parse("claudebrains:2:askanswer:1:2:3"))
+    }
+
+    @Test
     fun `an index that addresses the whole message survives the round trip`() {
         // `revertall` uses -1, meaning "not one item, all of them".
         val link = ChatLink(0, "revertall", -1)
