@@ -6,6 +6,14 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.11.1
+
+- **Replies no longer run together where a tool ran.** Each time Claude stops to use a tool the reply resumes in a new block, and those were being appended to the same paragraph — "…не вигадувати свій.Тепер створю…", three sentences in one.
+- **The context figure is the context again.** It read `1.3M / 1.0M (128%)`, which cannot happen: it was counting every request a turn made, and each one re-reads the cached prefix. It now reports the last request, which is the thing the window bounds.
+- **The agent dropdown stays out of the way until it has something to offer.** Which agents exist is only knowable once the CLI has answered once, so before that it held a single entry and did nothing.
+- Both new dropdowns are wide enough for their own labels; they were clipping them to "Defa…ffort" and "Defa…gent".
+- A tool blocked in **Auto** or **Don't ask** now explains that those modes decide for themselves — it used to blame a missing terminal, which is not why.
+
 ## 0.11.0
 
 - **Claude can ask you a question, and you can answer it.** When it needs to know something it puts the question in the chat with its options as buttons, instead of guessing. Since 0.10.4 those were arriving and being drawn as a permission card — **Run** or **Skip** in answer to *tabs or spaces*.
