@@ -1052,7 +1052,8 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             // No id to match on: a card of its own is all that is left.
             val message = ChatMessage(Role.SYSTEM, "")
             message.approvalRequest = request
-            addAndRender(message)
+            val index = addAndRender(message)
+            watchForDecision(request, index)
         }
     }
 
@@ -1064,10 +1065,26 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         for (index in session.messages.indices.reversed()) {
             val call = session.messages[index].toolCalls.firstOrNull { it.id == toolUseId } ?: continue
             call.approval = request
+            watchForDecision(request, index)
             renderNow(index, session.messages[index])
             return true
         }
         return false
+    }
+
+    /**
+     * Redraws the card when it is answered from anywhere but a click.
+     *
+     * The turn ending, the chat closing and the backstop timeout all settle a
+     * request without going through the panel, and a card left offering **Run**
+     * to a CLI that has stopped listening invites a click into nothing.
+     */
+    private fun watchForDecision(request: com.claudecode.chatplugin.permissions.ApprovalRequest, index: Int) {
+        request.onDecided = {
+            ApplicationManager.getApplication().invokeLater {
+                session.messages.getOrNull(index)?.let { renderNow(index, it) }
+            }
+        }
     }
 
     /**
@@ -1289,6 +1306,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     val call = ToolCall(id, display)
                     // A question that got here first has been waiting for this.
                     call.approval = id?.let { awaitingCall.remove(it) }
+                    call.approval?.let { watchForDecision(it, assistantIndex) }
                     assistantMessage.toolCalls.add(call)
                     repaint()
                 }
