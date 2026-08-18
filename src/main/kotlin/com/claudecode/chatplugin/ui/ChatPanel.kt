@@ -1499,20 +1499,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     // Nothing is left to receive an answer; the service has
                     // already refused whatever was still open.
                     awaitingCall.clear()
-                    if (result.isError) {
-                        // A failed turn carries its reason in the result event rather
-                        // than as streamed text, so surface it instead of a blank reply.
-                        val reason = result.errorMessage?.takeIf { it.isNotBlank() }
-                            ?: "the turn ended with an error"
-                        val hint = if (result.apiErrorStatus == 401) {
-                            authBanner.isVisible = true
-                            "\n\nSign in again using the banner above, then send this message once more."
-                        } else {
-                            ""
-                        }
-                        val prefix = if (assistantMessage.text.isBlank()) "" else "\n\n"
-                        assistantMessage.text += "$prefix**Error:** $reason$hint"
-                    }
+                    if (TurnOutcome.needsSignIn(result)) authBanner.isVisible = true
+                    TurnOutcome.errorText(result, assistantMessage.text.isBlank())
+                        ?.let { assistantMessage.text += it }
                     // The CLI has finished writing to disk; reconstruct each edit's
                     // before/after now so the diff/revert links become live.
                     assistantMessage.edits.forEach { edit ->
@@ -1538,26 +1527,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     if (assistantMessage.edits.isNotEmpty()) {
                         val outcome = reviewService.submit(assistantMessage.edits)
                         if (outcome.unreviewable.isNotEmpty()) {
-                            addSystemBubble(
-                                "Couldn't mark up ${outcome.unreviewable.joinToString { it.fileName }} for inline " +
-                                    "review — the pre-edit content can't be reconstructed exactly, so accepting " +
-                                    "or rejecting line by line would be guesswork. Use the **diff** link above " +
-                                    "to review the whole file instead."
-                            )
+                            addSystemBubble(TurnOutcome.unreviewableMessage(outcome.unreviewable))
                         }
                         if (outcome.conflicted.isNotEmpty()) {
-                            // Not a limitation to apologise for — two versions of
-                            // the file exist and the user is the only one who can
-                            // choose. Say exactly what is where.
-                            addSystemBubble(
-                                "⚠️ **You have unsaved changes** in " +
-                                    "${outcome.conflicted.joinToString { it.fileName }}, and Claude edited " +
-                                    "the same file on disk.\n\n" +
-                                    "Your version is untouched in the editor, so nothing of yours was lost — " +
-                                    "but it was left out of inline review, because reloading it would have " +
-                                    "discarded your work. Use the **diff** link above to see Claude's version, " +
-                                    "then either save yours over it or reload the file from disk to take Claude's."
-                            )
+                            addSystemBubble(TurnOutcome.conflictedMessage(outcome.conflicted))
                         }
                     }
 
