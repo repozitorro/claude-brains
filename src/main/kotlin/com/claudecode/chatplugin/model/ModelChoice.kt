@@ -67,14 +67,14 @@ data class PermissionChoice(val label: String, val id: String?, val hint: String
          */
         val INHERIT = PermissionChoice(
             "CLI default", "",
-            "Whatever your CLI is configured to do. Anything that would need a prompt is " +
-                "refused here rather than asked, since this chat has no terminal to answer in."
+            "Whatever your CLI is configured to do. Anything it would prompt about is asked " +
+                "here, in the chat, on the tool call itself."
         )
 
         val ACCEPT_EDITS = PermissionChoice(
             "Accept edits", "acceptEdits",
             "File edits are applied, then marked up in the editor for you to accept or reject. " +
-                "Commands still follow your CLI's own rules."
+                "Commands still follow your CLI's own rules, and it asks here before running one."
         )
 
         // Accept edits leads: it is the default, and the one that matches how
@@ -83,12 +83,27 @@ data class PermissionChoice(val label: String, val id: String?, val hint: String
             ACCEPT_EDITS,
             INHERIT,
             PermissionChoice("Plan", "plan", "Read-only: Claude plans but changes nothing"),
-            // Modes the CLI accepts whose exact behaviour isn't documented in
-            // `claude --help`; offered as-is rather than described inaccurately.
-            PermissionChoice("Auto", "auto", ""),
-            PermissionChoice("Manual", "manual", ""),
-            PermissionChoice("Don't ask", "dontAsk", ""),
-            PermissionChoice("Bypass permissions", "bypassPermissions", "Everything runs unprompted — use with care")
+            // The three below are the modes that exist so nobody is asked
+            // anything, so this chat does not ask in them either — being
+            // stopped mid-turn in Auto is the mode failing at its one job.
+            PermissionChoice(
+                "Auto", "auto",
+                "Your CLI's own classifier decides each action. You are not asked here; " +
+                    "anything it refuses is reported when the turn ends."
+            ),
+            PermissionChoice(
+                "Manual", "manual",
+                "Passed to the CLI as-is. In this chat it behaves as the CLI default does, " +
+                    "and you are asked before anything that needs permission."
+            ),
+            PermissionChoice(
+                "Don't ask", "dontAsk",
+                "No questions, here or anywhere. Anything refused is reported when the turn ends."
+            ),
+            PermissionChoice(
+                "Bypass permissions", "bypassPermissions",
+                "Everything runs unprompted, with nothing to ask about — use with care"
+            )
         )
 
         fun forId(id: String?): PermissionChoice =
