@@ -150,6 +150,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         EFFORT_LEVELS.forEach { addItem(it) }
         selectedItem = session.selectedEffort ?: settings.defaultEffort.ifBlank { CLI_DEFAULT }
         toolTipText = "How much thinking this chat spends per turn"
+        // Secondary controls, and the widest agent names ("general-purpose")
+        // would otherwise set the width for the whole row.
+        preferredSize = Dimension(JBUI.scale(118), preferredSize.height)
         addActionListener {
             session.selectedEffort = (selectedItem as? String)?.takeIf { it != CLI_DEFAULT }
         }
@@ -163,10 +166,11 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
      * has reported the list.
      */
     private val agentSelector = JComboBox<String>().apply {
-        addItem(CLI_DEFAULT)
+        addItem(DEFAULT_AGENT)
         toolTipText = "Agent for this chat"
+        preferredSize = Dimension(JBUI.scale(118), preferredSize.height)
         addActionListener {
-            session.selectedAgent = (selectedItem as? String)?.takeIf { it != CLI_DEFAULT }
+            session.selectedAgent = (selectedItem as? String)?.takeIf { it != DEFAULT_AGENT }
         }
     }
 
@@ -175,13 +179,13 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         val agents = session.capabilities?.agents.orEmpty()
         if (agents.isEmpty()) return
         val chosen = session.selectedAgent
-        if ((0 until agentSelector.itemCount).map { agentSelector.getItemAt(it) } == listOf(CLI_DEFAULT) + agents) {
+        if ((0 until agentSelector.itemCount).map { agentSelector.getItemAt(it) } == listOf(DEFAULT_AGENT) + agents) {
             return // already showing this list; leave the selection alone
         }
         agentSelector.removeAllItems()
-        agentSelector.addItem(CLI_DEFAULT)
+        agentSelector.addItem(DEFAULT_AGENT)
         agents.forEach { agentSelector.addItem(it) }
-        agentSelector.selectedItem = chosen ?: CLI_DEFAULT
+        agentSelector.selectedItem = chosen ?: DEFAULT_AGENT
     }
 
     private val modeSelector = JComboBox<PermissionChoice>().apply {
@@ -324,13 +328,16 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // account rather than as one more control.
         val controlsRow = JPanel(BorderLayout()).apply {
             isOpaque = false
-            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply {
+            // WrapLayout, not FlowLayout: this sits in WEST, which grants
+            // preferred width and nothing less, so a row that cannot fit has to
+            // report a taller size rather than run on under the buttons in EAST.
+            add(JPanel(WrapLayout(java.awt.FlowLayout.LEFT, 4, 2)).apply {
                 isOpaque = false
                 add(modelSelector)
                 add(modeSelector)
                 add(effortSelector)
                 add(agentSelector)
-            }, BorderLayout.WEST)
+            }, BorderLayout.CENTER)
             add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0)).apply {
                 isOpaque = false
                 add(
@@ -1600,7 +1607,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         val APPROVAL_ACTIONS = setOf("askrun", "askalways", "askskip")
 
         /** What the CLI accepts for --effort, plus the entry that passes none. */
+        /** The entry in each selector that passes no flag at all. */
         const val CLI_DEFAULT = "Default effort"
+        const val DEFAULT_AGENT = "Default agent"
         val EFFORT_LEVELS = listOf(CLI_DEFAULT, "low", "medium", "high", "xhigh", "max")
 
         /** Marks a symbol entry in the `@` popup, where everything else is a path. */
