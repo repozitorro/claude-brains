@@ -51,6 +51,15 @@ class StreamParser(
 
     private val log = Logger.getInstance(StreamParser::class.java)
 
+    /**
+     * Whether a content block has begun and has yet to produce anything.
+     *
+     * Per-turn state, which is why one of these is built for each turn rather
+     * than shared: two chats streaming at once would otherwise take each
+     * other's paragraph breaks.
+     */
+    private var blockStarted = false
+
     /** Processes one JSON line. Returns a [TurnResult] for the terminal `result` event, else null. */
     fun parse(line: String, listener: StreamListener): TurnResult? {
         val json = try {
@@ -66,11 +75,26 @@ class StreamParser(
         when (json.get("type")?.asString) {
             "stream_event" -> {
                 val event = json.getAsJsonObject("event") ?: return null
+                // A reply is written in blocks, and a turn that stops to run a
+                // tool comes back in a new one. Nothing in a delta says which
+                // block it belongs to — the index restarts from 0 with every
+                // assistant message, so "one" and "three" either side of a tool
+                // call both arrive as index 0 (verified against 2.1.232). What
+                // separates them is that a block *started*, so that is what is
+                // tracked, and the first text out of a new block says so.
+                if (event.get("type")?.asString == "content_block_start") blockStarted = true
                 if (event.get("type")?.asString == "content_block_delta") {
                     val delta = event.getAsJsonObject("delta") ?: return null
                     when (delta.get("type")?.asString) {
-                        "text_delta" -> delta.get("text")?.asString?.let { listener.onTextChunk(it) }
-                        "thinking_delta" -> delta.get("thinking")?.asString?.let { listener.onThinkingChunk(it) }
+                        "text_delta" -> delta.get("text")?.asString?.let {
+                            if (blockStarted) listener.onTextBlockStart()
+                            blockStarted = false
+                            listener.onTextChunk(it)
+                        }
+                        "thinking_delta" -> delta.get("thinking")?.asString?.let {
+                            blockStarted = false
+                            listener.onThinkingChunk(it)
+                        }
                     }
                 }
             }

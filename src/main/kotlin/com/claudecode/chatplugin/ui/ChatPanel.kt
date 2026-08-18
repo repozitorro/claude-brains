@@ -1415,6 +1415,14 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         fun repaintNow() = renderNow(assistantIndex, assistantMessage)
 
         cliService.sendPrompt(session, prompt, object : com.claudecode.chatplugin.cli.StreamListener {
+            override fun onTextBlockStart() {
+                ApplicationManager.getApplication().invokeLater {
+                    // A paragraph, not a space: these were separate blocks and
+                    // read as separate thoughts.
+                    if (assistantMessage.text.isNotBlank()) assistantMessage.text += "\n\n"
+                }
+            }
+
             override fun onTextChunk(chunk: String) {
                 ApplicationManager.getApplication().invokeLater {
                     assistantMessage.text += chunk

@@ -29,7 +29,9 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
 
     private val log = Logger.getInstance(ClaudeCliService::class.java)
     private val executor = Executors.newCachedThreadPool()
-    private val parser = StreamParser()
+    // Built per turn, not shared: it carries state about the block being
+    // streamed, and two chats at once would take each other's.
+    private fun newParser() = StreamParser()
 
     /** Shuts the worker pool down with the project, so its threads don't outlive it. */
     override fun dispose() {
@@ -155,6 +157,7 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
             log.warn("Could not send the prompt to the CLI", it)
         }
 
+        val parser = newParser()
         val stderr = StringBuffer()
         val stderrThread = Thread {
             BufferedReader(InputStreamReader(process.errorStream, Charsets.UTF_8)).forEachLine { line ->
