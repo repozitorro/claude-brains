@@ -83,11 +83,23 @@ data class ApprovalSummary(val title: String, val detail: String?) {
          * is in [detail]; the name of the program is what the title is for.
          */
         private fun program(command: String?): String? {
-            val first = command?.trim()?.substringBefore(' ')?.takeIf { it.isNotEmpty() } ?: return null
+            if (command == null) return null
+            // `cd "D:\Work\project" && npm run graphify` is a request to run
+            // **npm**. Titling it "Command cd" describes the least interesting
+            // thing on the line — and it is the line the CLI writes most often,
+            // because it has no other way to choose a directory.
+            val segment = command.split("&&", ";", "||")
+                .map { it.trim() }
+                .firstOrNull { it.isNotEmpty() && it.substringBefore(' ') !in PREAMBLE }
+                ?: command
+            val first = segment.trim().substringBefore(' ').takeIf { it.isNotEmpty() } ?: return null
             // A full path names the same program as its last segment does, and
             // the segment is what someone recognises.
             return lastPathSegment(first.trim('"', '\''))
         }
+
+        /** Commands that only set the stage for the one after them. */
+        private val PREAMBLE = setOf("cd", "pushd", "set", "export", "chdir")
 
         /** Written as the shell prompt would write it: the last segment, elided. */
         private fun location(projectDir: String?): String? =

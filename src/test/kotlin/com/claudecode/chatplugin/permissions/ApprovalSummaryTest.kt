@@ -31,6 +31,29 @@ class ApprovalSummaryTest {
     }
 
     @Test
+    fun `a leading cd is not what the command is about`() {
+        // The CLI writes this constantly — it has no other way to choose a
+        // directory — and "Command cd" describes the least interesting thing
+        // on the line.
+        val summary = ApprovalSummary.of(
+            "Bash",
+            input("""{"command":"cd \"D:\\Work\\lms-human-front\" && npm run graphify -- query \"x\""}"""),
+            project
+        )
+        assertEquals("Command npm in …/lms-human-front", summary.title)
+        // The line itself is untouched: it is what will actually run.
+        assertEquals(
+            "cd \"D:\\Work\\lms-human-front\" && npm run graphify -- query \"x\"",
+            summary.detail
+        )
+    }
+
+    @Test
+    fun `a line that is only a cd is still named by it`() {
+        assertEquals("Command cd in …/lms-human-front", ApprovalSummary.of("Bash", input("""{"command":"cd /tmp"}"""), project).title)
+    }
+
+    @Test
     fun `a program given by full path is named by the program`() {
         // C:\tools\node.exe is node. The path is in the detail line for anyone
         // who needs it; the title is for recognising the thing.

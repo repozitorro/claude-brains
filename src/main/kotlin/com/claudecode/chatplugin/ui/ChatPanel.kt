@@ -1035,16 +1035,56 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             // The turn may have ended between the question being asked and this
             // arriving, in which case the answer would go nowhere.
             if (request.isDecided) return@invokeLater
+            statusLabel.text = "waiting on you"
+
+            // Onto the call it is about, so the question, the command and its
+            // output stay one thing. The two arrive by different routes — the
+            // call on the CLI's stdout, the question over HTTP — so either can
+            // be first; when the call has not landed yet the question waits for
+            // it by id.
+            val id = request.toolUseId
+            if (id != null && attachApproval(id, request)) return@invokeLater
+            if (id != null) {
+                awaitingCall[id] = request
+                return@invokeLater
+            }
+
+            // No id to match on: a card of its own is all that is left.
             val message = ChatMessage(Role.SYSTEM, "")
             message.approvalRequest = request
             addAndRender(message)
-            statusLabel.text = "waiting on you"
         }
     }
 
+    /** Puts [request] on the tool call it names, if that call is on screen yet. */
+    private fun attachApproval(
+        toolUseId: String,
+        request: com.claudecode.chatplugin.permissions.ApprovalRequest
+    ): Boolean {
+        for (index in session.messages.indices.reversed()) {
+            val call = session.messages[index].toolCalls.firstOrNull { it.id == toolUseId } ?: continue
+            call.approval = request
+            renderNow(index, session.messages[index])
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Questions that arrived before the call they are about, by `tool_use_id`.
+     *
+     * Cleared when the call lands. An entry left here is answered by the
+     * service's own timeout rather than being leaked: the map holds a reference,
+     * not the obligation.
+     */
+    private val awaitingCall =
+        java.util.concurrent.ConcurrentHashMap<String, com.claudecode.chatplugin.permissions.ApprovalRequest>()
+
     /** Answers the card, which releases the CLI thread parked on it. */
-    private fun answerApproval(message: ChatMessage, index: Int, action: String) {
-        val request = message.approvalRequest ?: return
+    private fun answerApproval(message: ChatMessage, index: Int, callIndex: Int, action: String) {
+        val request = message.toolCalls.getOrNull(callIndex)?.approval
+            ?: message.approvalRequest
+            ?: return
         if (request.isDecided) return // already answered; the card is a record now
 
         val decision = when (action) {
@@ -1058,11 +1098,11 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             else -> ApprovalDecision.Deny("The user declined this in the IDE.")
         }
         request.decide(decision)
-        // The card cannot be saved — it holds a live process — so the message
-        // carries a written record of what was decided. Only that survives a
-        // restart, and an empty bubble in the reloaded transcript would be all
-        // there was to show for it.
-        message.text = record(request, decision)
+        // A card of its own has no text but the record, and would come back
+        // from a restart as an empty bubble without it. A card living on a tool
+        // call must not do this: that message is the assistant's reply, and its
+        // text is the reply.
+        if (message.approvalRequest === request) message.text = record(request, decision)
         renderNow(index, message)
         statusLabel.text = if (decision is ApprovalDecision.Allow) "allowed" else "skipped"
     }
@@ -1246,7 +1286,10 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
 
             override fun onToolUse(id: String?, display: String) {
                 ApplicationManager.getApplication().invokeLater {
-                    assistantMessage.toolCalls.add(ToolCall(id, display))
+                    val call = ToolCall(id, display)
+                    // A question that got here first has been waiting for this.
+                    call.approval = id?.let { awaitingCall.remove(it) }
+                    assistantMessage.toolCalls.add(call)
                     repaint()
                 }
             }
@@ -1311,6 +1354,9 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
             override fun onComplete(result: com.claudecode.chatplugin.cli.TurnResult) {
                 ApplicationManager.getApplication().invokeLater {
                     assistantMessage.isStreaming = false
+                    // Nothing is left to receive an answer; the service has
+                    // already refused whatever was still open.
+                    awaitingCall.clear()
                     if (result.isError) {
                         // A failed turn carries its reason in the result event rather
                         // than as streamed text, so surface it instead of a blank reply.
@@ -1474,7 +1520,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 return@invokeLater
             }
             if (parts[2] in APPROVAL_ACTIONS) {
-                answerApproval(message, msgIndex, parts[2])
+                answerApproval(message, msgIndex, editIndex, parts[2])
                 return@invokeLater
             }
             if (parts[2] == "fixproblems") {

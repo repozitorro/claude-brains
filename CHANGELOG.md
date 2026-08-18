@@ -6,6 +6,14 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.10.2
+
+- **The question is now asked on the command it is about.** It used to be a block of its own at the end of the conversation, so it drifted to the bottom as Claude kept writing above it, and the same command appeared twice — once as the row that ran it, once as the card that asked. One row now: the command, **Run** and **Skip**, then its output in the same place.
+- **A row waiting on you opens itself**, and keeps one word afterwards — `allowed` or `skipped` — so the transcript shows which calls you decided rather than the CLI.
+- **Auto and Don't ask no longer stop to ask.** Those modes exist so that nobody is asked anything; being interrupted mid-turn in **Auto** was the mode failing at its one job. The modes that do ask are Accept edits, CLI default, Plan and Manual.
+- **Every permission mode now says what it does.** Three of them had no description at all, and two described behaviour that stopped being true when asking became possible.
+- `cd "D:\Work\project" && npm run graphify` was headed **Command cd**. The CLI writes that preamble constantly, having no other way to choose a directory, so the heading now looks past it to the program actually being run.
+
 ## 0.10.1
 
 - **Claude now asks before it acts, instead of refusing and explaining afterwards.** A card appears in the conversation with the command it wants to run and where it would run it, and **Run** or **Skip**. The turn is genuinely paused until you answer — nothing has happened yet.

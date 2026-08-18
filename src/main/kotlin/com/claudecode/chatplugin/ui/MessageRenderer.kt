@@ -61,31 +61,43 @@ object MessageRenderer {
      * painted as a coloured dot by the stylesheet, rather than spelled out in
      * emoji — it reads faster and stays consistent with the IDE's own chrome.
      */
-    private fun toolCallsBlock(calls: List<ToolCall>): String {
+    private fun toolCallsBlock(calls: List<ToolCall>, msgIndex: Int): String {
         if (calls.isEmpty()) return ""
-        val rows = calls.joinToString("") { tc ->
+        val rows = calls.mapIndexed { callIndex, tc ->
             val status = when (tc.status) {
                 ToolCall.Status.OK -> "ok"
                 ToolCall.Status.ERROR -> "error"
                 ToolCall.Status.RUNNING -> "running"
             }
             val label = "<span class='cb-dot'></span><span class='cb-act-label'>" +
-                escape(tc.display) + "</span>"
+                escape(tc.display) + "</span>" + approvalMark(tc.approval)
             val output = tc.output
-            val inner = if (output.isNullOrBlank()) {
+            val asking = tc.approval?.takeIf { !it.isDecided }
+            // The question, the command and its output are one call, so they
+            // are one row. Asked in a block of its own it drifted away from
+            // what it was about — the assistant kept writing above it, and the
+            // card sank to the bottom of the conversation.
+            val body = buildString {
+                asking?.let { append(approvalBody(it, msgIndex, callIndex)) }
+                if (!output.isNullOrBlank()) {
+                    append("<pre class='cb-out'>").append(escapeKeepNewlines(output)).append("</pre>")
+                }
+            }
+            val inner = if (body.isEmpty()) {
                 "<div class='cb-act-row'>$label</div>"
             } else {
-                // Failures open by default — that output is the reason you're looking.
-                val open = if (tc.status == ToolCall.Status.ERROR) " open" else ""
+                // Failures open by default — that output is the reason you're
+                // looking. So does a question: it is the reason you were
+                // interrupted, and it cannot be answered unread.
+                val open = if (tc.status == ToolCall.Status.ERROR || asking != null) " open" else ""
                 // A row that opens has to look like one. The platform marker is
                 // hidden (it sits in the wrong place and cannot be styled), so
                 // this stands in for it — and appears only where there is
                 // something to open, which is what makes it mean anything.
-                "<details$open><summary>$label<span class='cb-chev'>›</span></summary>" +
-                    "<pre class='cb-out'>" + escapeKeepNewlines(output) + "</pre></details>"
+                "<details$open><summary>$label<span class='cb-chev'>›</span></summary>$body</details>"
             }
             "<li class='cb-act' data-status='$status'>$inner</li>"
-        }
+        }.joinToString("")
         return "<ul class='cb-activity'>$rows</ul>"
     }
 
@@ -191,11 +203,6 @@ object MessageRenderer {
      * buttons are last and on the right, where a decision belongs.
      */
     private fun approvalBlock(request: com.claudecode.chatplugin.permissions.ApprovalRequest, msgIndex: Int): String {
-        val head = "<div class='cb-ask-head'>${escape(request.summary.title)}</div>"
-        val body = request.summary.detail
-            ?.let { "<div class='cb-ask-body'>${escape(it)}</div>" }
-            .orEmpty()
-
         val decided = request.decision
         if (decided != null) {
             val said = when (decided) {
@@ -204,21 +211,51 @@ object MessageRenderer {
                 is com.claudecode.chatplugin.permissions.ApprovalDecision.Deny -> escape(decided.message)
             }
             val state = if (decided is com.claudecode.chatplugin.permissions.ApprovalDecision.Allow) "ran" else "skipped"
-            return "<div class='cb-ask' data-state='$state'>$head$body" +
+            return "<div class='cb-ask' data-state='$state'>${askHead(request)}" +
                 "<div class='cb-ask-actions'><span class='cb-ask-done'>$said</span></div></div>"
         }
+        return approvalBody(request, msgIndex, 0)
+    }
 
+    /**
+     * The question itself: what is about to happen, and the two answers.
+     *
+     * Rendered inside the tool call it belongs to — [callIndex] is which one,
+     * carried in the link so the click lands on the right question when a turn
+     * has several in flight.
+     */
+    private fun approvalBody(
+        request: com.claudecode.chatplugin.permissions.ApprovalRequest,
+        msgIndex: Int,
+        callIndex: Int
+    ): String {
         val always = com.claudecode.chatplugin.permissions.AutoApproval
             .label(request.toolName, request.input)
-            ?.let { link(msgIndex, "askalways", 0, "Always allow ${escape(it)}") }
+            ?.let { link(msgIndex, "askalways", callIndex, "Always allow ${escape(it)}") }
             .orEmpty()
 
-        return "<div class='cb-ask' data-state='pending'>$head$body" +
+        return "<div class='cb-ask' data-state='pending'>${askHead(request)}" +
             "<div class='cb-ask-actions'>" +
             always +
-            link(msgIndex, "askskip", 0, "Skip") +
-            link(msgIndex, "askrun", 0, "Run", primary = true) +
+            link(msgIndex, "askskip", callIndex, "Skip") +
+            link(msgIndex, "askrun", callIndex, "Run", primary = true) +
             "</div></div>"
+    }
+
+    /** Where it happens, then the call itself, verbatim. */
+    private fun askHead(request: com.claudecode.chatplugin.permissions.ApprovalRequest): String =
+        "<div class='cb-ask-head'>${escape(request.summary.title)}</div>" +
+            request.summary.detail?.let { "<div class='cb-ask-body'>${escape(it)}</div>" }.orEmpty()
+
+    /** A word on a settled row saying the decision was yours, not the CLI's. */
+    private fun approvalMark(request: com.claudecode.chatplugin.permissions.ApprovalRequest?): String {
+        val decided = request?.decision ?: return ""
+        val word = when (decided) {
+            is com.claudecode.chatplugin.permissions.ApprovalDecision.Allow ->
+                if (decided.remembered) "allowed earlier" else "allowed"
+            is com.claudecode.chatplugin.permissions.ApprovalDecision.Deny -> "skipped"
+        }
+        return "<span class='cb-ask-mark'>$word</span>"
     }
 
     private fun link(
@@ -245,7 +282,7 @@ object MessageRenderer {
                 )
             )
         }
-        body.append(toolCallsBlock(message.toolCalls))
+        body.append(toolCallsBlock(message.toolCalls, msgIndex))
         body.append(editsBlock(message.edits, msgIndex, withLinks = !streaming))
         if (streaming) {
             body.append(escape(message.text))

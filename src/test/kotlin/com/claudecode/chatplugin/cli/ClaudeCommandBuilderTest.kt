@@ -91,6 +91,44 @@ class ClaudeCommandBuilderTest {
     }
 
     @Test
+    fun `a mode that exists to not ask is not given something to ask with`() {
+        // Picking Auto and then being stopped mid-turn is the mode failing at
+        // the one thing it is for. Same for Don't ask, and bypass has nothing
+        // left to ask about.
+        listOf("auto", "dontAsk", "bypassPermissions").forEach { mode ->
+            val command = build(
+                minimal.copy(sessionPermissionMode = mode, approvalConfigPath = "C:\\tmp\\approvals.json")
+            )
+            assertFalse("$mode should not be handed a prompt tool", command.contains("--permission-prompt-tool"))
+            assertFalse("$mode should not be handed the server either", command.contains("--mcp-config"))
+            // The mode itself still reaches the CLI — this is about who answers.
+            assertEquals(mode, command.valueOf("--permission-mode"))
+        }
+    }
+
+    @Test
+    fun `the modes that ask are given something to ask with`() {
+        listOf("acceptEdits", "plan", "manual", "").forEach { mode ->
+            val command = build(
+                minimal.copy(sessionPermissionMode = mode, approvalConfigPath = "C:\\tmp\\approvals.json")
+            )
+            assertTrue("$mode should be able to ask", command.contains("--permission-prompt-tool"))
+        }
+    }
+
+    @Test
+    fun `the project setting decides it when the chat has not chosen`() {
+        val command = build(
+            minimal.copy(
+                sessionPermissionMode = null,
+                projectPermissionMode = "auto",
+                approvalConfigPath = "C:\\tmp\\approvals.json"
+            )
+        )
+        assertFalse(command.contains("--permission-prompt-tool"))
+    }
+
+    @Test
     fun `no endpoint means the CLI goes back to deciding alone`() {
         val command = build(minimal.copy(approvalConfigPath = null))
         assertFalse(command.contains("--permission-prompt-tool"))

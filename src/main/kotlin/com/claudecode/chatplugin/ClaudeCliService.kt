@@ -95,16 +95,12 @@ class ClaudeCliService(private val project: Project) : com.intellij.openapi.Disp
             disallowedTools = settings.disallowedTools,
             model = session.selectedModel,
             resumeId = session.cliSessionId.takeIf { allowResume },
-            // In bypass mode there is nothing to ask about, so the endpoint is
-            // left out rather than named and never called.
-            approvalConfigPath = session.approvalEndpoint
-                ?.takeIf {
-                    ClaudeCommandBuilder.permissionMode(session.permissionMode, settings.permissionMode) !=
-                        "bypassPermissions"
-                }
-                ?.let {
-                    com.claudecode.chatplugin.permissions.ApprovalService.getInstance(project).mcpConfigPath(it)
-                }
+            // Passed whenever there is one; whether it is used at all is a
+            // question about the permission mode, and that rule lives with the
+            // rest of the flag rules in ClaudeCommandBuilder.
+            approvalConfigPath = session.approvalEndpoint?.let {
+                com.claudecode.chatplugin.permissions.ApprovalService.getInstance(project).mcpConfigPath(it)
+            }
         )
         val command = ClaudeCommandBuilder.build(request).toMutableList()
         // On Windows a bare "claude" is really claude.cmd, which CreateProcess

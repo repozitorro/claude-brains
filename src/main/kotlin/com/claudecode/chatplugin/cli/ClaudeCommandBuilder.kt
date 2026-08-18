@@ -86,7 +86,7 @@ object ClaudeCommandBuilder {
         // absent from `--help` but present and honoured (2.1.232): the CLI
         // calls this MCP tool for anything it would otherwise have to ask
         // about, and waits for the answer.
-        request.approvalConfigPath?.let {
+        request.approvalConfigPath?.takeIf { asksBeforeActing(permissionMode(request)) }?.let {
             add("--mcp-config")
             add(it)
             add("--permission-prompt-tool")
@@ -112,4 +112,24 @@ object ClaudeCommandBuilder {
     /** The same rule, for callers deciding something before they have a request. */
     fun permissionMode(sessionMode: String?, projectMode: String): String? =
         (sessionMode ?: projectMode).takeIf { it.isNotBlank() }
+
+    /**
+     * Whether a mode should stop and ask.
+     *
+     * Some modes exist precisely so that nobody is asked anything, and handing
+     * one of those a prompt tool contradicts the choice the user just made:
+     * picking **Auto** and then being stopped mid-turn is the mode failing to
+     * do the one thing it is for.
+     *
+     * The rest ask. What they refuse and what they wave through still differs
+     * between them — that part is the CLI's own permission engine, and none of
+     * it is ours to decide; this only settles whether there is anyone to ask.
+     */
+    fun asksBeforeActing(mode: String?): Boolean = mode !in DECIDES_FOR_ITSELF
+
+    /**
+     * `auto` runs the CLI's classifier, `dontAsk` says so in its name, and
+     * `bypassPermissions` has nothing left to ask about.
+     */
+    private val DECIDES_FOR_ITSELF = setOf("auto", "dontAsk", "bypassPermissions")
 }
