@@ -122,7 +122,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // toolbar size is cramped for anything longer than a sentence.
         font = JBFont.label().biggerOn(1.5f)
         margin = JBUI.insets(4, 5)
-        emptyText.text = "Ask Claude…  /  commands   @  files   paste a screenshot"
+        emptyText.text = "Ask Claude…  /  commands   @  files   ⇧↵ new line"
     }
 
     private val modelSelector = JComboBox<ModelChoice>().apply {
@@ -485,6 +485,32 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 }
             }
         })
+        installShiftEnterNewline()
+    }
+
+    /**
+     * Shift+Enter puts in a line break rather than sending.
+     *
+     * The key listener above already leaves it alone, and that is not enough:
+     * the IDE dispatches its own keymap before Swing sees a key at all, so a
+     * shortcut it has an action for never arrives — the same reason Ctrl+V has
+     * to be handled as an action below rather than as a paste.
+     *
+     * So the break is inserted by an action of our own, registered on the text
+     * area, where it outranks whatever the keymap would have done.
+     */
+    private fun installShiftEnterNewline() {
+        val newline = object : com.intellij.openapi.project.DumbAwareAction() {
+            override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                inputArea.replaceSelection("\n")
+            }
+        }
+        newline.registerCustomShortcutSet(
+            com.intellij.openapi.actionSystem.CustomShortcutSet(
+                KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, java.awt.event.InputEvent.SHIFT_DOWN_MASK)
+            ),
+            inputArea
+        )
     }
 
     /**
