@@ -122,7 +122,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // toolbar size is cramped for anything longer than a sentence.
         font = JBFont.label().biggerOn(1.5f)
         margin = JBUI.insets(4, 5)
-        emptyText.text = "Ask Claude…  /  commands   @  files   paste a screenshot"
+        emptyText.text = "Ask Claude…  /  commands   @  files   ⇧↵ new line"
     }
 
     private val modelSelector = JComboBox<ModelChoice>().apply {
@@ -485,6 +485,32 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                 }
             }
         })
+        installShiftEnterNewline()
+    }
+
+    /**
+     * Shift+Enter puts in a line break rather than sending.
+     *
+     * The key listener above already leaves it alone, and that is not enough:
+     * the IDE dispatches its own keymap before Swing sees a key at all, so a
+     * shortcut it has an action for never arrives — the same reason Ctrl+V has
+     * to be handled as an action below rather than as a paste.
+     *
+     * So the break is inserted by an action of our own, registered on the text
+     * area, where it outranks whatever the keymap would have done.
+     */
+    private fun installShiftEnterNewline() {
+        val newline = object : com.intellij.openapi.project.DumbAwareAction() {
+            override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                inputArea.replaceSelection("\n")
+            }
+        }
+        newline.registerCustomShortcutSet(
+            com.intellij.openapi.actionSystem.CustomShortcutSet(
+                KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, java.awt.event.InputEvent.SHIFT_DOWN_MASK)
+            ),
+            inputArea
+        )
     }
 
     /**
@@ -800,6 +826,19 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         if (busy) statusLabel.text = "…thinking" + queuedSuffix() else updateAnalyticsLabel()
     }
 
+    /**
+     * A price, to as many places as carry meaning.
+     *
+     * `$2.8111` spends two digits saying nothing: at that size a hundredth of a
+     * cent changes no decision anybody makes. A first turn costing `$0.0043`
+     * needs them, and gets them.
+     */
+    internal fun formatCost(usd: Double): String = when {
+        usd >= 1.0 -> fmt("%.2f", usd)
+        usd >= 0.01 -> fmt("%.3f", usd)
+        else -> fmt("%.4f", usd)
+    }
+
     /** Cumulative token/cost analytics for this session, plus the rate-limit window. */
     private fun updateAnalyticsLabel() {
         // Only this conversation's own spend. The account's limits and their
@@ -807,7 +846,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // just said the same thing twice.
         val parts = mutableListOf<String>()
         if (session.turnCount > 0) {
-            parts += "$" + fmt("%.4f", session.totalCostUsd)
+            parts += "$" + formatCost(session.totalCostUsd)
             parts += "${formatTokens(session.totalInputTokens)} in / ${formatTokens(session.totalOutputTokens)} out"
         }
         // How close this conversation is to filling the model's context — the
@@ -1560,7 +1599,11 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     result.contextTokens?.let { session.contextTokens = it }
                     result.contextWindow?.let { session.contextWindow = it }
                     result.costUsd?.let { session.totalCostUsd += it }
-                    result.inputTokens?.let { session.totalInputTokens += it }
+                    // What the turn sent, cache included — see TurnResult. The
+                    // uncached figure is a few tokens and reads as nonsense
+                    // beside the output count.
+                    (result.promptTokens ?: result.inputTokens?.toLong())
+                        ?.let { session.totalInputTokens += it }
                     result.outputTokens?.let { session.totalOutputTokens += it }
 
                     if (result.permissionDenials.isNotEmpty()) {

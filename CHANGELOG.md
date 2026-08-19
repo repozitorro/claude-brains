@@ -6,6 +6,13 @@ plugin advertises as its release notes — see `patchPluginXml` in build.gradle.
 Each bullet stays on one line: the build reads them with a simple parser, not a
 markdown engine.
 
+## 0.11.2
+
+- **Shift+Enter breaks a line** instead of sending. Leaving it out of the send handler was never enough — the IDE dispatches its own keymap before the text area sees a key, so the shortcut has to be claimed on the input itself. The placeholder now says so.
+- **"in" counts what the turn actually sent.** It read `87 in / 32.3k out`, as though Claude had written four hundred times more than it was given: the figure left out everything served from cache, which on a long conversation is nearly all of it.
+- **Prices lose the digits that say nothing.** `$2.8111` is now `$2.81`, while a first turn at `$0.0043` keeps every place it needs.
+- **A tool row shows the command, not the `cd` in front of it.** `Bash cd "D:\Work\…" && npm run graphify -- query…` spent its whole width choosing a directory.
+
 ## 0.11.1
 
 - **Replies no longer run together where a tool ran.** Each time Claude stops to use a tool the reply resumes in a new block, and those were being appended to the same paragraph — "…не вигадувати свій.Тепер створю…", three sentences in one.
