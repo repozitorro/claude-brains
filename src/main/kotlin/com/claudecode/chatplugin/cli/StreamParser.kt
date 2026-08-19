@@ -166,6 +166,13 @@ class StreamParser(
                     inputTokens = usage?.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
                     outputTokens = usage?.get("output_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
                     durationMs = json.get("duration_ms")?.takeIf { it.isJsonPrimitive }?.asLong,
+                    // The totals across every request the turn made: the wrong
+                    // number for "how full is the context", and the right one
+                    // for "how much did this send".
+                    promptTokens = usage?.let {
+                        num(it, "input_tokens") + num(it, "cache_read_input_tokens") +
+                            num(it, "cache_creation_input_tokens")
+                    },
                     contextTokens = contextTokens(usage),
                     contextWindow = parseContextWindow(json.getAsJsonObject("modelUsage")),
                     permissionDenials = parsePermissionDenials(json.getAsJsonArray("permission_denials")),
@@ -304,6 +311,23 @@ class StreamParser(
             ?.let { if (it.length > MAX_DENIAL_DETAIL) it.take(MAX_DENIAL_DETAIL - 1) + "…" else it }
     }
 
+    /**
+     * Drops a leading `cd somewhere &&`, so the row shows the command that
+     * matters rather than the one that only chose a directory.
+     *
+     * Only a leading one, and only when something follows it: `cd /tmp` on its
+     * own is the whole command, and is left alone.
+     */
+    internal fun dropDirectoryPreamble(command: String): String {
+        var rest = command.trim()
+        while (true) {
+            val match = PREAMBLE.find(rest) ?: return rest
+            val remainder = rest.removeRange(match.range).trim()
+            if (remainder.isEmpty()) return rest
+            rest = remainder
+        }
+    }
+
     /** Turns a tool_use block into a compact one-liner like "Read foo.kt" or "Bash npm test". */
     private fun summariseToolUse(block: JsonObject): String {
         val name = block.get("name")?.asString ?: "tool"
@@ -315,7 +339,13 @@ class StreamParser(
         val shown = if (argKey == "file_path" || argKey == "path") {
             arg.replace('\\', '/').substringAfterLast('/')
         } else {
-            arg.replace(Regex("\\s+"), " ").let { if (it.length > 60) it.take(57) + "…" else it }
+            // `cd "D:\Work\project" && npm run graphify -- query …` spends its
+            // whole width on the part that chooses a directory, and the command
+            // it actually runs falls off the end. The CLI writes that preamble
+            // constantly, having no other way to choose one.
+            dropDirectoryPreamble(arg)
+                .replace(Regex("\\s+"), " ")
+                .let { if (it.length > 60) it.take(57) + "…" else it }
         }
         return "$name $shown"
     }
@@ -335,6 +365,14 @@ class StreamParser(
 
         /** A blocked command is quoted back in one line, not in full. */
         internal const val MAX_DENIAL_DETAIL = 80
+
+        /**
+         * A leading `cd …` (or `pushd`) joined to the rest by `&&` or `;`.
+         *
+         * The path may be quoted and may contain spaces, so it is taken up to
+         * the joining operator rather than to the first space.
+         */
+        private val PREAMBLE = Regex("""^\s*(cd|pushd)\s+("[^"]*"|'[^']*'|\S+)\s*(&&|;)\s*""")
     }
 }
 

@@ -800,6 +800,19 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         if (busy) statusLabel.text = "…thinking" + queuedSuffix() else updateAnalyticsLabel()
     }
 
+    /**
+     * A price, to as many places as carry meaning.
+     *
+     * `$2.8111` spends two digits saying nothing: at that size a hundredth of a
+     * cent changes no decision anybody makes. A first turn costing `$0.0043`
+     * needs them, and gets them.
+     */
+    internal fun formatCost(usd: Double): String = when {
+        usd >= 1.0 -> fmt("%.2f", usd)
+        usd >= 0.01 -> fmt("%.3f", usd)
+        else -> fmt("%.4f", usd)
+    }
+
     /** Cumulative token/cost analytics for this session, plus the rate-limit window. */
     private fun updateAnalyticsLabel() {
         // Only this conversation's own spend. The account's limits and their
@@ -807,7 +820,7 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
         // just said the same thing twice.
         val parts = mutableListOf<String>()
         if (session.turnCount > 0) {
-            parts += "$" + fmt("%.4f", session.totalCostUsd)
+            parts += "$" + formatCost(session.totalCostUsd)
             parts += "${formatTokens(session.totalInputTokens)} in / ${formatTokens(session.totalOutputTokens)} out"
         }
         // How close this conversation is to filling the model's context — the
@@ -1560,7 +1573,11 @@ class ChatPanel(private val project: Project, private val session: ClaudeSession
                     result.contextTokens?.let { session.contextTokens = it }
                     result.contextWindow?.let { session.contextWindow = it }
                     result.costUsd?.let { session.totalCostUsd += it }
-                    result.inputTokens?.let { session.totalInputTokens += it }
+                    // What the turn sent, cache included — see TurnResult. The
+                    // uncached figure is a few tokens and reads as nonsense
+                    // beside the output count.
+                    (result.promptTokens ?: result.inputTokens?.toLong())
+                        ?.let { session.totalInputTokens += it }
                     result.outputTokens?.let { session.totalOutputTokens += it }
 
                     if (result.permissionDenials.isNotEmpty()) {

@@ -18,6 +18,15 @@ data class TurnResult(
     val costUsd: Double?,
     val inputTokens: Int?,
     val outputTokens: Int?,
+    /**
+     * Everything this turn actually sent, cached prefix included.
+     *
+     * [inputTokens] is the CLI's `input_tokens`, which counts only what was
+     * *not* served from cache — a handful of tokens on a turn that really sent
+     * fifty thousand. Shown beside the output figure it read as though Claude
+     * had written four hundred times more than it was given.
+     */
+    val promptTokens: Long? = null,
     val durationMs: Long?,
     /** Tools the CLI refused to run this turn (from `result.permission_denials`). */
     val permissionDenials: List<PermissionDenial> = emptyList(),
